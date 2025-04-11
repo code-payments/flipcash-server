@@ -19,7 +19,18 @@
 
 # Go workspace file
 go.work
-go.work.sum
 
-# env file
+# Build output directories
+build/
+
+# Visual Studio Code
+.vscode/
+
+# Jetbrains
+.idea/
+
+# Node.js
+node_modules/
+
+# Environment / Config files
 .env
