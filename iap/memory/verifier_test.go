@@ -12,12 +12,14 @@ func TestMemoryVerifier(t *testing.T) {
 		t.Fatalf("error generating key pair: %v", err)
 	}
 
-	verifier := NewMemoryVerifier(pub)
+	product := "valid_product"
+
+	verifier := NewMemoryVerifier(pub, product)
 	messageGenerator := func() string {
 		return "paid_feature"
 	}
-	validReceiptFunc := func(msg string) string {
-		return GenerateValidReceipt(priv, msg)
+	validReceiptFunc := func(msg string) (string, string) {
+		return GenerateValidReceipt(priv, msg), product
 	}
 
 	teardown := func() {}

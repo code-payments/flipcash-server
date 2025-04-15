@@ -16,7 +16,6 @@ func TestAppleVerifier(t *testing.T) {
 
 	verifier := NewAppleVerifier(
 		"com.flipchat.app",
-		"com.flipchat.iap.createAccount",
 	)
 
 	// The test harness requires a MessageGenerator function. For Apple receipts,
@@ -27,8 +26,8 @@ func TestAppleVerifier(t *testing.T) {
 
 	// validReceiptFunc simulates returning the iOS app developer’s base64 receipt.
 	// We simply return our placeholder base64Receipt.
-	validReceiptFunc := func(_ string) string {
-		return base64Receipt
+	validReceiptFunc := func(_ string) (string, string) {
+		return base64Receipt, "com.flipchat.iap.createAccount"
 	}
 
 	// No-op teardown.

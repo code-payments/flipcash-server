@@ -39,10 +39,10 @@ github.com/cockroachdb/cockroach-go/v2 v2.2.0 h1:/5znzg5n373N/3ESjHF5SMLxiW4RKB0
 github.com/cockroachdb/cockroach-go/v2 v2.2.0/go.mod h1:u3MiKYGupPPjkn3ozknpMUpxPaNLTFWAya419/zv6eI=
 github.com/code-payments/code-protobuf-api v1.19.1-0.20250409171630-fb01c98ecd86 h1:Lv+DODC5j/zvzx+CfL8tlpw0GCHXpEwW/ICPXze3jTY=
 github.com/code-payments/code-protobuf-api v1.19.1-0.20250409171630-fb01c98ecd86/go.mod h1:ee6TzKbgMS42ZJgaFEMG3c4R3dGOiffHSu6MrY7WQvs=
-github.com/code-payments/code-server v1.10.21-0.20250411160553-21db176e79cc h1:lef5u/tK0JdzPEWlrqCW2SgR20F8I3fO9CGpK10/MOg=
-github.com/code-payments/code-server v1.10.21-0.20250411160553-21db176e79cc/go.mod h1:6jljqfgImW6EliWRehEhBo46KmrKHowfMhpgxOUNXZ0=
-github.com/code-payments/flipcash-protobuf-api v1.0.0 h1:83o2lV0EAOK6xxerQ1dU2Jf3+XaxnIHdXdspbvrYM4s=
-github.com/code-payments/flipcash-protobuf-api v1.0.0/go.mod h1:YBz+vkbQN8PCxYcJVFePEGfOpIoR8zEsFx2Acrp9FyA=
+github.com/code-payments/code-server v1.10.21-0.20250414183654-2ddc4e1487f8 h1:BdIORvZAVl9HhyKORo1C1twlA23O/etfXZ1D5RZvgvQ=
+github.com/code-payments/code-server v1.10.21-0.20250414183654-2ddc4e1487f8/go.mod h1:6jljqfgImW6EliWRehEhBo46KmrKHowfMhpgxOUNXZ0=
+github.com/code-payments/flipcash-protobuf-api v1.0.2 h1:YktJN2g62CI/sFAWXZJjBrhXP6X7kifz80OAfCUHncI=
+github.com/code-payments/flipcash-protobuf-api v1.0.2/go.mod h1:YBz+vkbQN8PCxYcJVFePEGfOpIoR8zEsFx2Acrp9FyA=
 github.com/containerd/continuity v0.4.3 h1:6HVkalIp+2u1ZLH1J/pYX2oBVXlJZvh1X1A7bEZ9Su8=
 github.com/containerd/continuity v0.4.3/go.mod h1:F6PTNCKepoxEaXLQp3wDAjygEnImnZ/7o4JzpodfroQ=
 github.com/coreos/go-systemd v0.0.0-20190321100706-95778dfbb74e/go.mod h1:F5haX7vjVVG0kc13fIWeqUViNPyEJxv/OmvnBo0Yme4=
@@ -63,6 +63,8 @@ github.com/docker/go-connections v0.5.0 h1:USnMq7hx7gwdVZq1L49hLXaFtUdTADjXGp+uj
 github.com/docker/go-connections v0.5.0/go.mod h1:ov60Kzw0kKElRwhNs9UlUHAE/F9Fe6GLaXnqyDdmEXc=
 github.com/docker/go-units v0.5.0 h1:69rxXcBk27SvSaaxTtLh/8llcHD8vYHT7WSdRZ/jvr4=
 github.com/docker/go-units v0.5.0/go.mod h1:fgPhTUdO+D/Jk86RDLlptpiXQzgHJF7gydDDbaIK4Dk=
+github.com/emirpasic/gods v1.12.0 h1:QAUIPSaCu4G+POclxeqb3F+WPpdKqFGlw36+yOzGlrg=
+github.com/emirpasic/gods v1.12.0/go.mod h1:YfzfFFoVP/catgzJb4IKIqXjX78Ha8FMSDh3ymbK86o=
 github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=
@@ -281,6 +283,8 @@ github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.10.0 h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOfJA=
 github.com/stretchr/testify v1.10.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
+github.com/vence722/base122-go v0.0.2 h1:U9hyrbOsw2c1jdg2QPNPvt15cdszVdn7uaxU8K2VrYg=
+github.com/vence722/base122-go v0.0.2/go.mod h1:3bzDQsujP7wNZSqg6jsnNXF+XABfiET4y5qM+YtFPzs=
 github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f/go.mod h1:N2zxlSyiKSe5eX1tZViRH5QA0qijqEDrYZiPEAiq3wU=
 github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb h1:zGWFAtiMcyryUHoUjUJX0/lt1H2+i2Ka2n+D3DImSNo=
 github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb/go.mod h1:N2zxlSyiKSe5eX1tZViRH5QA0qijqEDrYZiPEAiq3wU=

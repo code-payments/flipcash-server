@@ -2,6 +2,7 @@ package apple
 
 import (
 	"context"
+	"errors"
 
 	"github.com/devsisters/go-applereceipt"
 	"github.com/devsisters/go-applereceipt/applepki"
@@ -18,24 +19,20 @@ const (
 type AppleVerifier struct {
 	// PackageName is the app's package name, e.g. "com.flipchat.app".
 	packageName string
-
-	// ProductName is the name of the product that the receipt should be for.
-	productName string
 }
 
-func NewAppleVerifier(pkgName string, product string) iap.Verifier {
+func NewAppleVerifier(pkgName string) iap.Verifier {
 	return &AppleVerifier{
 		packageName: pkgName,
-		productName: product,
 	}
 }
 
-func (m *AppleVerifier) VerifyReceipt(ctx context.Context, encodedReceipt string) (bool, error) {
+func (m *AppleVerifier) VerifyReceipt(ctx context.Context, receipt, product string) (bool, error) {
 	tracer := metrics.TraceMethodCall(ctx, metricsStructName, "VerifyReceipt")
 	defer tracer.End()
 
 	res, err := func() (bool, error) {
-		receipt, err := applereceipt.DecodeBase64(encodedReceipt, applepki.CertPool())
+		receipt, err := applereceipt.DecodeBase64(receipt, applepki.CertPool())
 		if err != nil {
 			return false, err
 		}
@@ -45,16 +42,14 @@ func (m *AppleVerifier) VerifyReceipt(ctx context.Context, encodedReceipt string
 			return false, nil
 		}
 
-		// NOTE: this is omitted because Apple may not provide it as part of the envelope.
-		// See https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html
+		if len(receipt.InAppPurchaseReceipts) != 1 {
+			return false, errors.New("expected exactly one iap receipt")
+		}
 
 		// Verify the that the receipt is for the correct product.
-		// if receipt.InAppPurchaseReceipts[0].ProductIdentifier != m.productName {
-		// return false, nil
-		// }
-
-		// TODO: verify the AppVersion field in the receipt?
-		// receipt.AppVersion
+		if receipt.InAppPurchaseReceipts[0].ProductIdentifier != product {
+			return false, nil
+		}
 
 		return true, nil
 	}()

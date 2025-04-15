@@ -20,8 +20,8 @@ import (
 )
 
 // RunServerTests runs a set of tests against the iap.Server.
-func RunServerTests(t *testing.T, accounts account.Store, iaps iap.Store, verifer iap.Verifier, validReceiptFunc func(msg string) string, teardown func()) {
-	for _, tf := range []func(t *testing.T, accountStore account.Store, iaps iap.Store, verifer iap.Verifier, validReceiptFunc func(msg string) string){
+func RunServerTests(t *testing.T, accounts account.Store, iaps iap.Store, verifer iap.Verifier, validReceiptFunc func(msg string) (string, string), teardown func()) {
+	for _, tf := range []func(t *testing.T, accountStore account.Store, iaps iap.Store, verifer iap.Verifier, validReceiptFunc func(msg string) (string, string)){
 		testOnPurchaseCompleted,
 	} {
 		tf(t, accounts, iaps, verifer, validReceiptFunc)
@@ -29,7 +29,7 @@ func RunServerTests(t *testing.T, accounts account.Store, iaps iap.Store, verife
 	}
 }
 
-func testOnPurchaseCompleted(t *testing.T, accounts account.Store, iaps iap.Store, verifer iap.Verifier, validReceiptFunc func(msg string) string) {
+func testOnPurchaseCompleted(t *testing.T, accounts account.Store, iaps iap.Store, verifer iap.Verifier, validReceiptFunc func(msg string) (string, string)) {
 	log, err := zap.NewDevelopment()
 	require.NoError(t, err)
 	authn := auth.NewKeyPairAuthenticator()
@@ -44,7 +44,12 @@ func testOnPurchaseCompleted(t *testing.T, accounts account.Store, iaps iap.Stor
 		req := &iappb.OnPurchaseCompletedRequest{
 			Platform: commonpb.Platform_APPLE,
 			Receipt:  &iappb.Receipt{}, // A dummy receipt for testing
-			Auth:     nil,
+			Metadata: &iappb.Metadata{
+				Product:  iap.CreateAccountProductID,
+				Currency: "usd",
+				Amount:   20.00,
+			},
+			Auth: nil,
 		}
 
 		// Authenticate the request. Since `signer`'s key is not bound to any user,
@@ -62,10 +67,17 @@ func testOnPurchaseCompleted(t *testing.T, accounts account.Store, iaps iap.Stor
 		_, err := accounts.Bind(context.Background(), userID, signer.Proto())
 		require.NoError(t, err)
 
+		validReceipt, validProduct := validReceiptFunc("create account") // A valid dummy receipt for testing
+
 		req := &iappb.OnPurchaseCompletedRequest{
 			Platform: commonpb.Platform_GOOGLE,
-			Receipt:  &iappb.Receipt{Value: validReceiptFunc("create account")}, // A valid dummy receipt for testing
-			Auth:     nil,
+			Receipt:  &iappb.Receipt{Value: validReceipt},
+			Metadata: &iappb.Metadata{
+				Product:  validProduct,
+				Currency: "usd",
+				Amount:   20.00,
+			},
+			Auth: nil,
 		}
 
 		receiptID, err := verifer.GetReceiptIdentifier(context.Background(), req.Receipt.Value)
@@ -82,12 +94,14 @@ func testOnPurchaseCompleted(t *testing.T, accounts account.Store, iaps iap.Stor
 		require.NoError(t, err)
 		require.True(t, isRegistered)
 
-		purchase, err := iaps.GetPurchase(context.Background(), receiptID)
+		purchase, err := iaps.GetPurchaseByID(context.Background(), receiptID)
 		require.NoError(t, err)
 		require.Equal(t, receiptID, purchase.ReceiptID)
 		require.Equal(t, req.Platform, purchase.Platform)
 		require.NoError(t, protoutil.ProtoEqualError(userID, purchase.User))
 		require.Equal(t, iap.ProductCreateAccount, purchase.Product)
+		require.Equal(t, req.Metadata.Currency, purchase.PaymentCurrency)
+		require.EqualValues(t, req.Metadata.Amount, purchase.PaymentAmount)
 		require.Equal(t, iap.StateFulfilled, purchase.State)
 
 		t.Run("Use existing receipt", func(t *testing.T) {
@@ -110,7 +124,7 @@ func testOnPurchaseCompleted(t *testing.T, accounts account.Store, iaps iap.Stor
 			require.NoError(t, err)
 			require.False(t, isRegistered)
 
-			purchase, err := iaps.GetPurchase(context.Background(), receiptID)
+			purchase, err := iaps.GetPurchaseByID(context.Background(), receiptID)
 			require.NoError(t, err)
 			require.NoError(t, protoutil.ProtoEqualError(userID, purchase.User))
 		})
@@ -125,7 +139,12 @@ func testOnPurchaseCompleted(t *testing.T, accounts account.Store, iaps iap.Stor
 		req := &iappb.OnPurchaseCompletedRequest{
 			Platform: commonpb.Platform_GOOGLE,
 			Receipt:  &iappb.Receipt{Value: "invalid"}, // An invalid dummy receipt for testing
-			Auth:     nil,
+			Metadata: &iappb.Metadata{
+				Product:  iap.CreateAccountProductID,
+				Currency: "usd",
+				Amount:   20.00,
+			},
+			Auth: nil,
 		}
 
 		receiptID := []byte(req.Receipt.Value)
@@ -141,7 +160,43 @@ func testOnPurchaseCompleted(t *testing.T, accounts account.Store, iaps iap.Stor
 		require.NoError(t, err)
 		require.False(t, isRegistered)
 
-		_, err = iaps.GetPurchase(context.Background(), receiptID)
+		_, err = iaps.GetPurchaseByID(context.Background(), receiptID)
+		require.Equal(t, iap.ErrNotFound, err)
+	})
+
+	t.Run("Invalid Metadata", func(t *testing.T) {
+		// Bind the user's key in the store so that `authz` can recognize them.
+		userID := model.MustGenerateUserID()
+		_, err := accounts.Bind(context.Background(), userID, signer.Proto())
+		require.NoError(t, err)
+
+		validReceipt, _ := validReceiptFunc("create account") // A valid dummy receipt for testing
+
+		req := &iappb.OnPurchaseCompletedRequest{
+			Platform: commonpb.Platform_GOOGLE,
+			Receipt:  &iappb.Receipt{Value: validReceipt},
+			Metadata: &iappb.Metadata{
+				Product:  "com.flipcash.iap.invalid", // An invalid product for testing
+				Currency: "usd",
+				Amount:   20.00,
+			},
+			Auth: nil,
+		}
+
+		receiptID := []byte(req.Receipt.Value)
+
+		// Now that the user is bound, `authz` should recognize them and authorize the request.
+		require.NoError(t, signer.Auth(req, &req.Auth))
+
+		resp, err := server.OnPurchaseCompleted(context.Background(), req)
+		require.NoError(t, err)
+		require.NoError(t, protoutil.ProtoEqualError(&iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_INVALID_METADATA}, resp))
+
+		isRegistered, err := accounts.IsRegistered(context.Background(), userID)
+		require.NoError(t, err)
+		require.False(t, isRegistered)
+
+		_, err = iaps.GetPurchaseByID(context.Background(), receiptID)
 		require.Equal(t, iap.ErrNotFound, err)
 	})
 }

@@ -1,4 +1,4 @@
-//go:build android
+//go:build androidIntegration
 
 package android
 
@@ -35,19 +35,17 @@ func TestAndroidVerifier(t *testing.T) {
 	verifier := NewAndroidVerifier(
 		serviceAccount,
 		"xyz.flipchat.app",
-		"com.flipchat.iap.createaccount",
 	)
 
-	// The test harness requires a MessageGenerator function. For Apple receipts,
+	// The test harness requires a MessageGenerator function. For Android receipts,
 	// the concept of "message" doesn't strictly apply, so we provide a dummy function.
 	messageGenerator := func() string {
-		return "unused_in_apple_verifier"
+		return "unused_in_android_verifier"
 	}
 
-	// validReceiptFunc simulates returning the iOS app developer’s base64 receipt.
-	// We simply return our placeholder base64Receipt.
-	validReceiptFunc := func(_ string) string {
-		return testPurchaseToken
+	// validReceiptFunc simulates returning the Android app's receipt
+	validReceiptFunc := func(_ string) (string, string) {
+		return testPurchaseToken, "com.flipchat.iap.createaccount"
 	}
 
 	// No-op teardown.

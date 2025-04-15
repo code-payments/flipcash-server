@@ -1,9 +1,12 @@
 package memory
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
+
+	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 
 	"github.com/code-payments/flipcash-server/iap"
 )
@@ -27,8 +30,14 @@ func (s *InMemoryStore) reset() {
 }
 
 func (s *InMemoryStore) CreatePurchase(ctx context.Context, purchase *iap.Purchase) error {
-	if purchase.Product != iap.ProductCreateAccount {
-		return errors.New("product must be create account")
+	if purchase.Product == iap.ProductUnknown {
+		return errors.New("product is required")
+	}
+	if purchase.PaymentAmount <= 0 {
+		return errors.New("payment amount must be positive")
+	}
+	if len(purchase.PaymentCurrency) == 0 {
+		return errors.New("payment currency is required")
 	}
 	if purchase.State != iap.StateFulfilled {
 		return errors.New("state must be fulfilled")
@@ -47,7 +56,7 @@ func (s *InMemoryStore) CreatePurchase(ctx context.Context, purchase *iap.Purcha
 	return nil
 }
 
-func (s *InMemoryStore) GetPurchase(ctx context.Context, receiptID []byte) (*iap.Purchase, error) {
+func (s *InMemoryStore) GetPurchaseByID(ctx context.Context, receiptID []byte) (*iap.Purchase, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -56,4 +65,28 @@ func (s *InMemoryStore) GetPurchase(ctx context.Context, receiptID []byte) (*iap
 		return nil, iap.ErrNotFound
 	}
 	return purchase.Clone(), nil
+}
+
+func (s *InMemoryStore) GetPurchasesByUserAndProduct(ctx context.Context, userID *commonpb.UserId, product iap.Product) ([]*iap.Purchase, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var res []*iap.Purchase
+
+	for _, purchase := range s.purchases {
+		if !bytes.Equal(userID.Value, purchase.User.Value) {
+			continue
+		}
+
+		if purchase.Product != product {
+			continue
+		}
+
+		res = append(res, purchase.Clone())
+	}
+
+	if len(res) == 0 {
+		return nil, iap.ErrNotFound
+	}
+	return res, nil
 }

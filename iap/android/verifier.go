@@ -24,20 +24,16 @@ type AndroidVerifier struct {
 
 	// PackageName is the Android app's package name.
 	packageName string
-
-	// ProductName is the name of the product that the receipt should be for.
-	productName string
 }
 
-func NewAndroidVerifier(serviceAccountJSON []byte, pkgName string, product string) iap.Verifier {
+func NewAndroidVerifier(serviceAccountJSON []byte, pkgName string) iap.Verifier {
 	return &AndroidVerifier{
 		serviceAccountJSON: serviceAccountJSON,
 		packageName:        pkgName,
-		productName:        product,
 	}
 }
 
-func (v *AndroidVerifier) VerifyReceipt(ctx context.Context, receipt string) (bool, error) {
+func (v *AndroidVerifier) VerifyReceipt(ctx context.Context, receipt, product string) (bool, error) {
 	tracer := metrics.TraceMethodCall(ctx, metricsStructName, "VerifyReceipt")
 	defer tracer.End()
 
@@ -50,7 +46,7 @@ func (v *AndroidVerifier) VerifyReceipt(ctx context.Context, receipt string) (bo
 		// If it's a subscription, call Purchases.Subscriptions.Get(...).
 		// If it's a one-time product, call Purchases.Products.Get(...).
 
-		call := svc.Purchases.Products.Get(v.packageName, v.productName, receipt)
+		call := svc.Purchases.Products.Get(v.packageName, product, receipt)
 
 		productPurchase, err := call.Context(ctx).Do()
 		if err != nil {
@@ -63,6 +59,10 @@ func (v *AndroidVerifier) VerifyReceipt(ctx context.Context, receipt string) (bo
 		// Check these fields to decide if it's valid.
 		if productPurchase.PurchaseState != 0 {
 			// 0 = purchased, anything else indicates an invalid / canceled / pending purchase.
+			return false, nil
+		}
+
+		if productPurchase.ProductId != product {
 			return false, nil
 		}
 

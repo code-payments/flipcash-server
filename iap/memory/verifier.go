@@ -15,15 +15,19 @@ import (
 // the receipt. For testing purposes, the "receipt" is actually a message that,
 // when signed by the owner secret, is considered valid.
 type MemoryVerifier struct {
-	publicKey ed25519.PublicKey
+	publicKey    ed25519.PublicKey
+	validProduct string
 }
 
 // NewMemoryVerifier creates a new MemoryVerifier from a given public key.
-func NewMemoryVerifier(pubKey ed25519.PublicKey) iap.Verifier {
-	return &MemoryVerifier{publicKey: pubKey}
+func NewMemoryVerifier(pubKey ed25519.PublicKey, validProduct string) iap.Verifier {
+	return &MemoryVerifier{
+		publicKey:    pubKey,
+		validProduct: validProduct,
+	}
 }
 
-func (m *MemoryVerifier) VerifyReceipt(ctx context.Context, receipt string) (bool, error) {
+func (m *MemoryVerifier) VerifyReceipt(ctx context.Context, receipt, product string) (bool, error) {
 	// For simplicity, the receipt format is: base64(signature)|message
 
 	signature, message, err := parseReceipt(receipt)
@@ -31,6 +35,10 @@ func (m *MemoryVerifier) VerifyReceipt(ctx context.Context, receipt string) (boo
 		// Not returning an error here because we're testing the verifier, not the
 		// receipt parsing.
 
+		return false, nil
+	}
+
+	if product != m.validProduct {
 		return false, nil
 	}
 

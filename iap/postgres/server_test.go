@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	account "github.com/code-payments/flipcash-server/account/postgres"
+	"github.com/code-payments/flipcash-server/iap"
 	iap_memory "github.com/code-payments/flipcash-server/iap/memory"
 	"github.com/code-payments/flipcash-server/iap/tests"
 
@@ -26,9 +27,10 @@ func TestIap_PostgresServer(t *testing.T) {
 		t.Fatalf("error generating key pair: %v", err)
 	}
 
-	verifier := iap_memory.NewMemoryVerifier(pub)
-	validReceiptFunc := func(msg string) string {
-		return iap_memory.GenerateValidReceipt(priv, msg)
+	product := iap.CreateAccountProductID
+	verifier := iap_memory.NewMemoryVerifier(pub, product)
+	validReceiptFunc := func(msg string) (string, string) {
+		return iap_memory.GenerateValidReceipt(priv, msg), product
 	}
 
 	accounts := account.NewInPostgres(pool)

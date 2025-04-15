@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	account "github.com/code-payments/flipcash-server/account/memory"
+	"github.com/code-payments/flipcash-server/iap"
 	"github.com/code-payments/flipcash-server/iap/tests"
 )
 
@@ -13,9 +14,10 @@ func TestIAP_MemoryServer(t *testing.T) {
 		t.Fatalf("error generating key pair: %v", err)
 	}
 
-	verifier := NewMemoryVerifier(pub)
-	validReceiptFunc := func(msg string) string {
-		return GenerateValidReceipt(priv, msg)
+	product := iap.CreateAccountProductID
+	verifier := NewMemoryVerifier(pub, product)
+	validReceiptFunc := func(msg string) (string, string) {
+		return GenerateValidReceipt(priv, msg), product
 	}
 
 	accounts := account.NewInMemory()

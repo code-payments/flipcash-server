@@ -20,7 +20,7 @@ type Product uint8
 const (
 	ProductUnknown Product = iota
 	ProductCreateAccount
-	ProductCreateAccountWithTopUp
+	ProductCreateAccountWithWelcomeBonus
 )
 
 type State uint8
@@ -33,26 +33,31 @@ const (
 )
 
 type Purchase struct {
-	ReceiptID []byte
-	Platform  commonpb.Platform
-	User      *commonpb.UserId
-	Product   Product
-	State     State
-	CreatedAt time.Time
+	ReceiptID       []byte
+	Platform        commonpb.Platform
+	User            *commonpb.UserId
+	Product         Product
+	PaymentAmount   float64
+	PaymentCurrency string
+	State           State
+	CreatedAt       time.Time
 }
 
 type Store interface {
 	CreatePurchase(ctx context.Context, purchase *Purchase) error
-	GetPurchase(ctx context.Context, receiptId []byte) (*Purchase, error)
+	GetPurchaseByID(ctx context.Context, receiptID []byte) (*Purchase, error)
+	GetPurchasesByUserAndProduct(ctx context.Context, userID *commonpb.UserId, product Product) ([]*Purchase, error)
 }
 
 func (p *Purchase) Clone() *Purchase {
 	return &Purchase{
-		ReceiptID: p.ReceiptID,
-		Platform:  p.Platform,
-		User:      proto.Clone(p.User).(*commonpb.UserId),
-		Product:   p.Product,
-		State:     p.State,
-		CreatedAt: p.CreatedAt,
+		ReceiptID:       p.ReceiptID,
+		Platform:        p.Platform,
+		User:            proto.Clone(p.User).(*commonpb.UserId),
+		Product:         p.Product,
+		PaymentAmount:   p.PaymentAmount,
+		PaymentCurrency: p.PaymentCurrency,
+		State:           p.State,
+		CreatedAt:       p.CreatedAt,
 	}
 }

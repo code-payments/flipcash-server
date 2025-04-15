@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -16,6 +17,11 @@ import (
 	"github.com/code-payments/flipcash-server/account"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/model"
+)
+
+const (
+	CreateAccountProductID                 = "com.flipcash.iap.createAccount"
+	CreateAccountWithWelcomeBonusProductID = "com.flipcash.iap.createAccountWithWelcomeBonus"
 )
 
 type Server struct {
@@ -48,7 +54,6 @@ func NewServer(
 }
 
 // todo: DB transaction for all calls
-// todo: We'll need to distinguish what was purchased, but just assume ProductCreateAccount for now
 func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseCompletedRequest) (*iappb.OnPurchaseCompletedResponse, error) {
 	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
@@ -69,11 +74,23 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 		zap.String("user_id", model.UserIDString(userID)),
 		zap.String("platform", req.Platform.String()),
 		zap.String("receipt", req.Receipt.Value),
+		zap.String("product", req.Metadata.Product),
 	)
 
 	log.Debug("Got a receipt")
 
-	isVerified, err := verifier.VerifyReceipt(ctx, req.Receipt.Value)
+	var product Product
+	switch req.Metadata.Product {
+	case CreateAccountProductID:
+		product = ProductCreateAccount
+	case CreateAccountWithWelcomeBonusProductID:
+		product = ProductCreateAccountWithWelcomeBonus
+	default:
+		log.Warn("Invalid product in metadata")
+		return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_INVALID_METADATA}, nil
+	}
+
+	isVerified, err := verifier.VerifyReceipt(ctx, req.Receipt.Value, req.Metadata.Product)
 	if err != nil {
 		log.Warn("Failed to verify receipt", zap.Error(err))
 		return nil, status.Error(codes.Internal, "failed to verify receipt")
@@ -93,7 +110,7 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 	)
 
 	// Note: purchase is always assumed to be fulfilled
-	purchase, err := s.iaps.GetPurchase(ctx, receiptID)
+	purchase, err := s.iaps.GetPurchaseByID(ctx, receiptID)
 	if err == nil {
 		if bytes.Equal(userID.Value, purchase.User.Value) {
 			// Purchase is already fulfilled for this user, so it's a no-op. Return success
@@ -106,19 +123,27 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 		return nil, status.Error(codes.Internal, "failed to check existing purchase")
 	}
 
-	err = s.accounts.SetRegistrationFlag(ctx, userID, true)
-	if err != nil {
-		log.Warn("Failed to set registration flag", zap.Error(err))
-		return nil, status.Error(codes.Internal, "failed to set registration flag")
+	switch product {
+	case ProductCreateAccount, ProductCreateAccountWithWelcomeBonus:
+		err = s.accounts.SetRegistrationFlag(ctx, userID, true)
+		if err != nil {
+			log.Warn("Failed to set registration flag", zap.Error(err))
+			return nil, status.Error(codes.Internal, "failed to set registration flag")
+		}
+	default:
+		log.Warn("Product not implemented")
+		return nil, status.Error(codes.Internal, "product not implemented")
 	}
 
 	err = s.iaps.CreatePurchase(ctx, &Purchase{
-		ReceiptID: receiptID,
-		Platform:  req.Platform,
-		User:      userID,
-		Product:   ProductCreateAccount,
-		State:     StateFulfilled,
-		CreatedAt: time.Now(),
+		ReceiptID:       receiptID,
+		Platform:        req.Platform,
+		User:            userID,
+		Product:         product,
+		PaymentAmount:   float64(req.Metadata.Amount),
+		PaymentCurrency: strings.ToLower(req.Metadata.Currency),
+		State:           StateFulfilled,
+		CreatedAt:       time.Now(),
 	})
 	if err != nil {
 		log.Warn("Failed to create purchase", zap.Error(err))

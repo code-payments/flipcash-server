@@ -25,26 +25,44 @@ func RunStoreTests(t *testing.T, s iap.Store, teardown func()) {
 
 func testIapStore_HappyPath(t *testing.T, store iap.Store) {
 	expected := &iap.Purchase{
-		ReceiptID: []byte("receipt"),
-		Platform:  commonpb.Platform_APPLE,
-		User:      model.MustGenerateUserID(),
-		Product:   iap.ProductCreateAccount,
-		State:     iap.StateFulfilled,
-		CreatedAt: time.Now(),
+		ReceiptID:       []byte("receipt"),
+		Platform:        commonpb.Platform_APPLE,
+		User:            model.MustGenerateUserID(),
+		Product:         iap.ProductCreateAccount,
+		PaymentAmount:   1.23,
+		PaymentCurrency: "usd",
+		State:           iap.StateFulfilled,
+		CreatedAt:       time.Now(),
 	}
 
-	_, err := store.GetPurchase(context.Background(), expected.ReceiptID)
+	_, err := store.GetPurchaseByID(context.Background(), expected.ReceiptID)
+	require.Equal(t, iap.ErrNotFound, err)
+
+	_, err = store.GetPurchasesByUserAndProduct(context.Background(), expected.User, iap.ProductCreateAccount)
 	require.Equal(t, iap.ErrNotFound, err)
 
 	require.NoError(t, store.CreatePurchase(context.Background(), expected))
 
-	actual, err := store.GetPurchase(context.Background(), expected.ReceiptID)
+	actual, err := store.GetPurchaseByID(context.Background(), expected.ReceiptID)
 	require.NoError(t, err)
 	require.Equal(t, expected.ReceiptID, actual.ReceiptID)
 	require.Equal(t, expected.Platform, actual.Platform)
 	require.NoError(t, protoutil.ProtoEqualError(expected.User, actual.User))
 	require.Equal(t, expected.Product, actual.Product)
+	require.Equal(t, expected.PaymentAmount, actual.PaymentAmount)
+	require.Equal(t, expected.PaymentCurrency, actual.PaymentCurrency)
 	require.Equal(t, expected.State, actual.State)
+
+	_, err = store.GetPurchasesByUserAndProduct(context.Background(), expected.User, iap.ProductCreateAccountWithWelcomeBonus)
+	require.Equal(t, iap.ErrNotFound, err)
+
+	_, err = store.GetPurchasesByUserAndProduct(context.Background(), model.MustGenerateUserID(), iap.ProductCreateAccount)
+	require.Equal(t, iap.ErrNotFound, err)
+
+	byUserAndProduct, err := store.GetPurchasesByUserAndProduct(context.Background(), expected.User, iap.ProductCreateAccount)
+	require.NoError(t, err)
+	require.Len(t, byUserAndProduct, 1)
+	require.Equal(t, expected.ReceiptID, byUserAndProduct[0].ReceiptID)
 
 	require.Equal(t, iap.ErrExists, store.CreatePurchase(context.Background(), expected))
 }
