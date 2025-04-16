@@ -133,7 +133,11 @@ func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *
 			}
 
 			if intentRecord.InitiatorOwnerAccount == ownerAccount.PublicKey().ToBase58() {
-				notification.AdditionalMetadata = &activitypb.Notification_GaveUsdc{GaveUsdc: &activitypb.GaveUsdcNotificationMetadata{}}
+				if intentMetadata.IsWithdrawal {
+					notification.AdditionalMetadata = &activitypb.Notification_GaveUsdc{GaveUsdc: &activitypb.GaveUsdcNotificationMetadata{}}
+				} else {
+					notification.AdditionalMetadata = &activitypb.Notification_WithdrewUsdc{WithdrewUsdc: &activitypb.WithdrewUsdcNotificationMetadata{}}
+				}
 			} else {
 				_, ok := s.knownAirdropAccounts[intentRecord.InitiatorOwnerAccount]
 				if ok {

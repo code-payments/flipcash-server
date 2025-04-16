@@ -16,6 +16,8 @@ func InjectLocalizedText(ctx context.Context, notification *activitypb.Notificat
 		localizedText = "Gave"
 	case *activitypb.Notification_ReceivedUsdc:
 		localizedText = "Received"
+	case *activitypb.Notification_WithdrewUsdc:
+		localizedText = "Withdrew"
 	default:
 		return errors.New("unsupported notification type")
 	}

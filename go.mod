@@ -7,7 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v0.17.0
 	github.com/code-payments/code-protobuf-api v1.19.1-0.20250409171630-fb01c98ecd86
 	github.com/code-payments/code-server v1.10.21-0.20250416142050-82b414a76be2
-	github.com/code-payments/flipcash-protobuf-api v1.1.1
+	github.com/code-payments/flipcash-protobuf-api v1.1.2
 	github.com/devsisters/go-applereceipt v0.0.0-20240805020915-fa22a0160fc2
 	github.com/georgysavva/scany/v2 v2.1.4
 	github.com/google/uuid v1.6.0
