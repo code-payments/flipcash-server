@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	defaultMaxNotifications = 256
+	defaultMaxNotifications = 1024
 )
 
 type Server struct {
