@@ -78,9 +78,9 @@ func (s *Server) GetLatestNotifications(ctx context.Context, req *activitypb.Get
 
 	notificationsWithLocalizedText := make([]*activitypb.Notification, 0)
 	for _, notification := range notifications {
-		log = log.With(zap.String("notification_id", NotificationIDString(notification.Id)))
+		log := log.With(zap.String("notification_id", NotificationIDString(notification.Id)))
 
-		err = InjectLocalizedText(ctx, notification)
+		err = InjectLocalizedText(ctx, s.codeData, req.Auth.GetKeyPair().PubKey, notification)
 		if err != nil {
 			log.Warn("Failed to inject localized notification text", zap.Error(err))
 			continue
@@ -92,14 +92,14 @@ func (s *Server) GetLatestNotifications(ctx context.Context, req *activitypb.Get
 }
 
 func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *commonpb.PublicKey, limit int) ([]*activitypb.Notification, error) {
-	ownerAccount, err := codecommon.NewAccountFromPublicKeyBytes(pubKey.Value)
+	userOwnerAccount, err := codecommon.NewAccountFromPublicKeyBytes(pubKey.Value)
 	if err != nil {
 		return nil, err
 	}
 
 	intentRecords, err := s.codeData.GetAllIntentsByOwner(
 		ctx,
-		ownerAccount.PublicKey().ToBase58(),
+		userOwnerAccount.PublicKey().ToBase58(),
 		codequery.WithDirection(codequery.Descending),
 		codequery.WithLimit(uint64(limit)),
 	)
@@ -111,29 +111,43 @@ func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *
 
 	var notifications []*activitypb.Notification
 	for _, intentRecord := range intentRecords {
+		rawNotificationID, err := base58.Decode(intentRecord.IntentId)
+		if err != nil {
+			return nil, err
+		}
+
+		notification := &activitypb.Notification{
+			Id:            &activitypb.NotificationId{Value: rawNotificationID},
+			LocalizedText: "",
+			Ts:            timestamppb.New(intentRecord.CreatedAt),
+		}
+
 		switch intentRecord.IntentType {
 		case codeintent.SendPublicPayment:
-			rawNotificationID, err := base58.Decode(intentRecord.IntentId)
-			if err != nil {
-				return nil, err
-			}
-
 			intentMetadata := intentRecord.SendPublicPaymentMetadata
-			paymentAmount := &commonpb.PaymentAmount{
+			notification.PaymentAmount = &commonpb.PaymentAmount{
 				Currency:     string(intentMetadata.ExchangeCurrency),
 				NativeAmount: intentMetadata.NativeAmount,
 				Quarks:       intentMetadata.Quantity,
 			}
 
-			notification := &activitypb.Notification{
-				Id:            &activitypb.NotificationId{Value: rawNotificationID},
-				LocalizedText: "",
-				PaymentAmount: paymentAmount,
-				Ts:            timestamppb.New(intentRecord.CreatedAt),
-			}
+			if intentRecord.InitiatorOwnerAccount == userOwnerAccount.PublicKey().ToBase58() {
+				if intentMetadata.IsRemoteSend {
+					vaultAccount, err := codecommon.NewAccountFromPublicKeyString(intentMetadata.DestinationTokenAccount)
+					if err != nil {
+						return nil, err
+					}
 
-			if intentRecord.InitiatorOwnerAccount == ownerAccount.PublicKey().ToBase58() {
-				if intentMetadata.IsWithdrawal {
+					isClaimed, err := isGiftCardClaimed(ctx, s.codeData, vaultAccount)
+					if err != nil {
+						return nil, err
+					}
+
+					notification.AdditionalMetadata = &activitypb.Notification_SentUsdc{SentUsdc: &activitypb.SentUsdcNotificationMetadata{
+						Vault:                   &commonpb.PublicKey{Value: vaultAccount.ToProto().Value},
+						CanInitiateCancelAction: !isClaimed,
+					}}
+				} else if intentMetadata.IsWithdrawal {
 					notification.AdditionalMetadata = &activitypb.Notification_WithdrewUsdc{WithdrewUsdc: &activitypb.WithdrewUsdcNotificationMetadata{}}
 				} else {
 					notification.AdditionalMetadata = &activitypb.Notification_GaveUsdc{GaveUsdc: &activitypb.GaveUsdcNotificationMetadata{}}
@@ -146,9 +160,32 @@ func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *
 					notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
 				}
 			}
+		case codeintent.ReceivePaymentsPublicly:
+			intentMetadata := intentRecord.ReceivePaymentsPubliclyMetadata
 
-			notifications = append(notifications, notification)
+			vaultAccount, err := codecommon.NewAccountFromPublicKeyString(intentMetadata.Source)
+			if err != nil {
+				return nil, err
+			}
+
+			isIssuedByUser, err := isGiftCardIssuedByUser(ctx, s.codeData, userOwnerAccount, vaultAccount)
+			if err != nil {
+				return nil, err
+			} else if isIssuedByUser {
+				continue
+			}
+
+			notification.PaymentAmount = &commonpb.PaymentAmount{
+				Currency:     string(intentMetadata.OriginalExchangeCurrency),
+				NativeAmount: intentMetadata.OriginalNativeAmount,
+				Quarks:       intentMetadata.Quantity,
+			}
+			notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
+		default:
+			continue
 		}
+
+		notifications = append(notifications, notification)
 	}
 
 	return notifications, nil
