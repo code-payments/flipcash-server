@@ -2,6 +2,7 @@ package activity
 
 import (
 	"context"
+	"strings"
 
 	"github.com/mr-tron/base58"
 	"go.uber.org/zap"
@@ -16,6 +17,7 @@ import (
 	codedata "github.com/code-payments/code-server/pkg/code/data"
 	codeintent "github.com/code-payments/code-server/pkg/code/data/intent"
 	codequery "github.com/code-payments/code-server/pkg/database/query"
+	"github.com/code-payments/code-server/pkg/pointer"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/model"
 )
@@ -65,22 +67,61 @@ func (s *Server) GetLatestNotifications(ctx context.Context, req *activitypb.Get
 		zap.String("activity_feed_type", req.Type.String()),
 	)
 
-	limit := defaultMaxNotifications
-	if req.MaxItems > 0 {
-		limit = int(req.MaxItems)
+	notifications, err := s.getPagedNotifications(ctx, log, req.Auth.GetKeyPair().PubKey, &commonpb.QueryOptions{
+		PageSize: req.MaxItems,
+		Order:    commonpb.QueryOptions_DESC,
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, strings.ToLower(err.Error()))
+	}
+	return &activitypb.GetLatestNotificationsResponse{Notifications: notifications}, nil
+}
+
+func (s *Server) GetPagedNotifications(ctx context.Context, req *activitypb.GetPagedNotificationsRequest) (*activitypb.GetPagedNotificationsResponse, error) {
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
+	if err != nil {
+		return nil, err
 	}
 
-	notifications, err := s.getLatestNotificationsFromIntents(ctx, req.Auth.GetKeyPair().PubKey, limit)
+	log := s.log.With(
+		zap.String("user_id", model.UserIDString(userID)),
+		zap.String("activity_feed_type", req.Type.String()),
+	)
+
+	notifications, err := s.getPagedNotifications(ctx, log, req.Auth.GetKeyPair().PubKey, req.QueryOptions)
+	if err != nil {
+		return nil, status.Error(codes.Internal, strings.ToLower(err.Error()))
+	}
+	return &activitypb.GetPagedNotificationsResponse{Notifications: notifications}, nil
+}
+
+func (s *Server) getPagedNotifications(ctx context.Context, log *zap.Logger, pubKey *commonpb.PublicKey, queryOptions *commonpb.QueryOptions) ([]*activitypb.Notification, error) {
+	limit := defaultMaxNotifications
+	if queryOptions.PageSize > 0 {
+		limit = int(queryOptions.PageSize)
+	}
+
+	direction := codequery.Ascending
+	if queryOptions.Order == commonpb.QueryOptions_DESC {
+		direction = codequery.Descending
+	}
+
+	var pagingToken *string
+	if queryOptions.PagingToken != nil {
+		pagingToken = pointer.String(base58.Encode(queryOptions.PagingToken.Value))
+	}
+
+	notifications, err := s.getLatestNotificationsFromIntents(ctx, pubKey, pagingToken, direction, limit)
 	if err != nil {
 		log.Warn("Failed to get notifications", zap.Error(err))
-		return nil, status.Error(codes.Internal, "failed to get notifications")
+		return nil, err
 	}
 
 	notificationsWithLocalizedText := make([]*activitypb.Notification, 0)
 	for _, notification := range notifications {
 		log := log.With(zap.String("notification_id", NotificationIDString(notification.Id)))
 
-		err = InjectLocalizedText(ctx, s.codeData, req.Auth.GetKeyPair().PubKey, notification)
+		err = InjectLocalizedText(ctx, s.codeData, pubKey, notification)
 		if err != nil {
 			log.Warn("Failed to inject localized notification text", zap.Error(err))
 			continue
@@ -88,20 +129,31 @@ func (s *Server) GetLatestNotifications(ctx context.Context, req *activitypb.Get
 		notificationsWithLocalizedText = append(notificationsWithLocalizedText, notification)
 	}
 
-	return &activitypb.GetLatestNotificationsResponse{Notifications: notificationsWithLocalizedText}, nil
+	return notificationsWithLocalizedText, nil
 }
 
-func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *commonpb.PublicKey, limit int) ([]*activitypb.Notification, error) {
+func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *commonpb.PublicKey, pagingToken *string, direction codequery.Ordering, limit int) ([]*activitypb.Notification, error) {
 	userOwnerAccount, err := codecommon.NewAccountFromPublicKeyBytes(pubKey.Value)
 	if err != nil {
 		return nil, err
 	}
 
+	queryOptions := []codequery.Option{
+		codequery.WithDirection(direction),
+		codequery.WithLimit(uint64(limit)),
+	}
+	if pagingToken != nil {
+		intentRecord, err := s.codeData.GetIntent(ctx, *pagingToken)
+		if err != nil {
+			return nil, err
+		}
+		queryOptions = append(queryOptions, codequery.WithCursor(codequery.ToCursor(uint64(intentRecord.Id))))
+	}
+
 	intentRecords, err := s.codeData.GetAllIntentsByOwner(
 		ctx,
 		userOwnerAccount.PublicKey().ToBase58(),
-		codequery.WithDirection(codequery.Descending),
-		codequery.WithLimit(uint64(limit)),
+		queryOptions...,
 	)
 	if err == codeintent.ErrIntentNotFound {
 		return nil, nil
@@ -162,6 +214,10 @@ func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *
 			}
 		case codeintent.ReceivePaymentsPublicly:
 			intentMetadata := intentRecord.ReceivePaymentsPubliclyMetadata
+
+			if intentMetadata.IsIssuerVoidingGiftCard || intentMetadata.IsReturned {
+				continue
+			}
 
 			vaultAccount, err := codecommon.NewAccountFromPublicKeyString(intentMetadata.Source)
 			if err != nil {
