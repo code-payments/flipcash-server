@@ -5,13 +5,12 @@ import (
 	"errors"
 
 	activitypb "github.com/code-payments/flipcash-protobuf-api/generated/go/activity/v1"
-	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
 )
 
-func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userPublicKey *commonpb.PublicKey, notification *activitypb.Notification) error {
+func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOwnerAccount *codecommon.Account, notification *activitypb.Notification) error {
 	var localizedText string
 	switch typed := notification.AdditionalMetadata.(type) {
 	case *activitypb.Notification_WelcomeBonus:
@@ -28,17 +27,12 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userPu
 		} else {
 			localizedText = "Sent"
 
-			userOwnerAccount, err := codecommon.NewAccountFromPublicKeyBytes(userPublicKey.Value)
-			if err != nil {
-				return err
-			}
-
 			giftCardVaultAccount, err := codecommon.NewAccountFromPublicKeyBytes(typed.SentUsdc.Vault.Value)
 			if err != nil {
 				return err
 			}
 
-			isClaimedByUser, err := isClaimedGiftCardAccountReturnedToSender(ctx, codeData, userOwnerAccount, giftCardVaultAccount)
+			isClaimedByUser, err := isClaimedGiftCardReturnedToSender(ctx, codeData, userOwnerAccount, giftCardVaultAccount)
 			if err != nil {
 				return err
 			} else if isClaimedByUser {

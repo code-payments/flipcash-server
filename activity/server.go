@@ -2,7 +2,7 @@ package activity
 
 import (
 	"context"
-	"strings"
+	"errors"
 
 	"github.com/mr-tron/base58"
 	"go.uber.org/zap"
@@ -24,6 +24,11 @@ import (
 
 const (
 	defaultMaxNotifications = 1024
+)
+
+var (
+	errNotificationNotFound     = errors.New("notification not found")
+	errDeniedNotificationAccess = errors.New("notification access is denied")
 )
 
 type Server struct {
@@ -72,7 +77,7 @@ func (s *Server) GetLatestNotifications(ctx context.Context, req *activitypb.Get
 		Order:    commonpb.QueryOptions_DESC,
 	})
 	if err != nil {
-		return nil, status.Error(codes.Internal, strings.ToLower(err.Error()))
+		return nil, status.Error(codes.Internal, "")
 	}
 	return &activitypb.GetLatestNotificationsResponse{Notifications: notifications}, nil
 }
@@ -90,9 +95,33 @@ func (s *Server) GetPagedNotifications(ctx context.Context, req *activitypb.GetP
 
 	notifications, err := s.getPagedNotifications(ctx, log, req.Auth.GetKeyPair().PubKey, req.QueryOptions)
 	if err != nil {
-		return nil, status.Error(codes.Internal, strings.ToLower(err.Error()))
+		return nil, status.Error(codes.Internal, "")
 	}
 	return &activitypb.GetPagedNotificationsResponse{Notifications: notifications}, nil
+}
+
+func (s *Server) GetBatchNotifications(ctx context.Context, req *activitypb.GetBatchNotificationsRequest) (*activitypb.GetBatchNotificationsResponse, error) {
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
+	if err != nil {
+		return nil, err
+	}
+
+	log := s.log.With(
+		zap.String("user_id", model.UserIDString(userID)),
+		zap.Int("notification_count", len(req.Ids)),
+	)
+
+	notifications, err := s.getBatchNotifications(ctx, log, req.Auth.GetKeyPair().PubKey, req.Ids)
+	switch err {
+	case nil:
+		return &activitypb.GetBatchNotificationsResponse{Notifications: notifications}, nil
+	case errDeniedNotificationAccess:
+		return &activitypb.GetBatchNotificationsResponse{Result: activitypb.GetBatchNotificationsResponse_DENIED}, nil
+	case errNotificationNotFound:
+		return &activitypb.GetBatchNotificationsResponse{Result: activitypb.GetBatchNotificationsResponse_NOT_FOUND}, nil
+	default:
+		return nil, status.Error(codes.Internal, "")
+	}
 }
 
 func (s *Server) getPagedNotifications(ctx context.Context, log *zap.Logger, pubKey *commonpb.PublicKey, queryOptions *commonpb.QueryOptions) ([]*activitypb.Notification, error) {
@@ -111,28 +140,15 @@ func (s *Server) getPagedNotifications(ctx context.Context, log *zap.Logger, pub
 		pagingToken = pointer.String(base58.Encode(queryOptions.PagingToken.Value))
 	}
 
-	notifications, err := s.getLatestNotificationsFromIntents(ctx, pubKey, pagingToken, direction, limit)
+	notifications, err := s.getNotificationsFromPagedIntents(ctx, log, pubKey, pagingToken, direction, limit)
 	if err != nil {
 		log.Warn("Failed to get notifications", zap.Error(err))
 		return nil, err
 	}
-
-	notificationsWithLocalizedText := make([]*activitypb.Notification, 0)
-	for _, notification := range notifications {
-		log := log.With(zap.String("notification_id", NotificationIDString(notification.Id)))
-
-		err = InjectLocalizedText(ctx, s.codeData, pubKey, notification)
-		if err != nil {
-			log.Warn("Failed to inject localized notification text", zap.Error(err))
-			continue
-		}
-		notificationsWithLocalizedText = append(notificationsWithLocalizedText, notification)
-	}
-
-	return notificationsWithLocalizedText, nil
+	return notifications, nil
 }
 
-func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *commonpb.PublicKey, pagingToken *string, direction codequery.Ordering, limit int) ([]*activitypb.Notification, error) {
+func (s *Server) getNotificationsFromPagedIntents(ctx context.Context, log *zap.Logger, pubKey *commonpb.PublicKey, pagingToken *string, direction codequery.Ordering, limit int) ([]*activitypb.Notification, error) {
 	userOwnerAccount, err := codecommon.NewAccountFromPublicKeyBytes(pubKey.Value)
 	if err != nil {
 		return nil, err
@@ -160,7 +176,59 @@ func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *
 	} else if err != nil {
 		return nil, err
 	}
+	return s.toLocalizedNotifications(ctx, log, userOwnerAccount, intentRecords)
+}
 
+func (s *Server) getBatchNotifications(ctx context.Context, log *zap.Logger, pubKey *commonpb.PublicKey, ids []*activitypb.NotificationId) ([]*activitypb.Notification, error) {
+	notifications, err := s.getNotificationsFromBatchIntents(ctx, log, pubKey, ids)
+	if err != nil {
+		log.Warn("Failed to get notifications", zap.Error(err))
+		return nil, err
+	}
+	return notifications, nil
+}
+
+func (s *Server) getNotificationsFromBatchIntents(ctx context.Context, log *zap.Logger, pubKey *commonpb.PublicKey, ids []*activitypb.NotificationId) ([]*activitypb.Notification, error) {
+	userOwnerAccount, err := codecommon.NewAccountFromPublicKeyBytes(pubKey.Value)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "")
+	}
+
+	// todo: fetch via a batched DB called
+	var intentRecords []*codeintent.Record
+	for _, id := range ids {
+		intentID := base58.Encode(id.Value)
+
+		log := log.With(zap.String("notification_id", intentID))
+
+		intentRecord, err := s.codeData.GetIntent(ctx, intentID)
+		switch err {
+		case nil:
+		case codeintent.ErrIntentNotFound:
+			return nil, errNotificationNotFound
+		default:
+			log.Warn("Failed to get intent", zap.Error(err))
+			return nil, err
+		}
+
+		var destinationOwner string
+		switch intentRecord.IntentType {
+		case codeintent.SendPublicPayment:
+			destinationOwner = intentRecord.SendPublicPaymentMetadata.DestinationOwnerAccount
+		case codeintent.ReceivePaymentsPublicly:
+		default:
+			return nil, errNotificationNotFound
+		}
+		if userOwnerAccount.PublicKey().ToBase58() != intentRecord.InitiatorOwnerAccount && userOwnerAccount.PublicKey().ToBase58() != destinationOwner {
+			return nil, errDeniedNotificationAccess
+		}
+		intentRecords = append(intentRecords, intentRecord)
+	}
+
+	return s.toLocalizedNotifications(ctx, log, userOwnerAccount, intentRecords)
+}
+
+func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, userOwnerAccount *codecommon.Account, intentRecords []*codeintent.Record) ([]*activitypb.Notification, error) {
 	var notifications []*activitypb.Notification
 	for _, intentRecord := range intentRecords {
 		rawNotificationID, err := base58.Decode(intentRecord.IntentId)
@@ -172,6 +240,7 @@ func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *
 			Id:            &activitypb.NotificationId{Value: rawNotificationID},
 			LocalizedText: "",
 			Ts:            timestamppb.New(intentRecord.CreatedAt),
+			State:         activitypb.NotificationState_NOTIFICATION_STATE_COMPLETED,
 		}
 
 		switch intentRecord.IntentType {
@@ -199,6 +268,9 @@ func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *
 						Vault:                   &commonpb.PublicKey{Value: vaultAccount.ToProto().Value},
 						CanInitiateCancelAction: !isClaimed,
 					}}
+					if !isClaimed {
+						notification.State = activitypb.NotificationState_NOTIFICATION_STATE_PENDING
+					}
 				} else if intentMetadata.IsWithdrawal {
 					notification.AdditionalMetadata = &activitypb.Notification_WithdrewUsdc{WithdrewUsdc: &activitypb.WithdrewUsdcNotificationMetadata{}}
 				} else {
@@ -244,5 +316,14 @@ func (s *Server) getLatestNotificationsFromIntents(ctx context.Context, pubKey *
 		notifications = append(notifications, notification)
 	}
 
+	for _, notification := range notifications {
+		log := log.With(zap.String("notification_id", NotificationIDString(notification.Id)))
+
+		err := InjectLocalizedText(ctx, s.codeData, userOwnerAccount, notification)
+		if err != nil {
+			log.Warn("Failed to inject localized notification text", zap.Error(err))
+			return nil, err
+		}
+	}
 	return notifications, nil
 }

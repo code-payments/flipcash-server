@@ -28,7 +28,7 @@ func isGiftCardClaimed(ctx context.Context, codeData codedata.Provider, giftCard
 	return balance == 0, nil
 }
 
-func isClaimedGiftCardAccountReturnedToSender(ctx context.Context, codeData codedata.Provider, userOwnerAccount, giftCardVaultAccount *codecommon.Account) (bool, error) {
+func isClaimedGiftCardReturnedToSender(ctx context.Context, codeData codedata.Provider, userOwnerAccount, giftCardVaultAccount *codecommon.Account) (bool, error) {
 	claimedActionRecord, err := codeData.GetGiftCardClaimedAction(ctx, giftCardVaultAccount.PublicKey().ToBase58())
 	switch err {
 	case nil:

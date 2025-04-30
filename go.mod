@@ -5,9 +5,9 @@ go 1.24.0
 require (
 	github.com/ReneKroon/ttlcache v1.7.0
 	github.com/aws/aws-sdk-go-v2 v0.17.0
-	github.com/code-payments/code-protobuf-api v1.19.1-0.20250423160200-d52845b4298f
-	github.com/code-payments/code-server v1.10.21-0.20250428191251-3aa18d421779
-	github.com/code-payments/flipcash-protobuf-api v1.2.0
+	github.com/code-payments/code-protobuf-api v1.19.1-0.20250429171947-b8896029c856
+	github.com/code-payments/code-server v1.10.21-0.20250430141607-fd710363aa98
+	github.com/code-payments/flipcash-protobuf-api v1.3.0
 	github.com/devsisters/go-applereceipt v0.0.0-20240805020915-fa22a0160fc2
 	github.com/georgysavva/scany/v2 v2.1.4
 	github.com/google/uuid v1.6.0
