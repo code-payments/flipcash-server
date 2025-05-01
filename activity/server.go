@@ -218,6 +218,7 @@ func (s *Server) getNotificationsFromBatchIntents(ctx context.Context, log *zap.
 			destinationOwner = intentRecord.SendPublicPaymentMetadata.DestinationOwnerAccount
 		case codeintent.ReceivePaymentsPublicly:
 		case codeintent.ExternalDeposit:
+			destinationOwner = intentRecord.ExternalDepositMetadata.DestinationOwnerAccount
 		default:
 			return nil, errNotificationNotFound
 		}
