@@ -39,6 +39,8 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 				localizedText = "Cancelled"
 			}
 		}
+	case *activitypb.Notification_DepositedUsdc:
+		localizedText = "Deposited"
 	default:
 		return errors.New("unsupported notification type")
 	}

@@ -16,6 +16,7 @@ import (
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
 	codeintent "github.com/code-payments/code-server/pkg/code/data/intent"
+	codecurrency "github.com/code-payments/code-server/pkg/currency"
 	codequery "github.com/code-payments/code-server/pkg/database/query"
 	"github.com/code-payments/code-server/pkg/pointer"
 	"github.com/code-payments/flipcash-server/auth"
@@ -216,6 +217,7 @@ func (s *Server) getNotificationsFromBatchIntents(ctx context.Context, log *zap.
 		case codeintent.SendPublicPayment:
 			destinationOwner = intentRecord.SendPublicPaymentMetadata.DestinationOwnerAccount
 		case codeintent.ReceivePaymentsPublicly:
+		case codeintent.ExternalDeposit:
 		default:
 			return nil, errNotificationNotFound
 		}
@@ -309,6 +311,14 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				Quarks:       intentMetadata.Quantity,
 			}
 			notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
+		case codeintent.ExternalDeposit:
+			intentMetadata := intentRecord.ExternalDepositMetadata
+			notification.PaymentAmount = &commonpb.PaymentAmount{
+				Currency:     string(codecurrency.USD),
+				NativeAmount: intentMetadata.UsdMarketValue,
+				Quarks:       intentMetadata.Quantity,
+			}
+			notification.AdditionalMetadata = &activitypb.Notification_DepositedUsdc{DepositedUsdc: &activitypb.DepositedUsdcNotificationMetadata{}}
 		default:
 			continue
 		}
