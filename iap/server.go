@@ -81,9 +81,9 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 
 	var product Product
 	switch req.Metadata.Product {
-	case CreateAccountProductID:
+	case CreateAccountProductID, strings.ToLower(CreateAccountProductID):
 		product = ProductCreateAccount
-	case CreateAccountWithWelcomeBonusProductID:
+	case CreateAccountWithWelcomeBonusProductID, strings.ToLower(CreateAccountWithWelcomeBonusProductID):
 		product = ProductCreateAccountWithWelcomeBonus
 	default:
 		log.Warn("Invalid product in metadata")
