@@ -62,9 +62,10 @@ func (v *AndroidVerifier) VerifyReceipt(ctx context.Context, receipt, product st
 			return false, nil
 		}
 
-		if productPurchase.ProductId != product {
-			return false, nil
-		}
+		// ProductId may not be present, so we can't rely on it
+		//if productPurchase.ProductId != product {
+		//	return false, nil
+		//}
 
 		// If we get here, the purchase is likely valid.
 		return true, nil
