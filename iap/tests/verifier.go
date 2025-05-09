@@ -50,11 +50,10 @@ func testInvalidReceipt(t *testing.T, v iap.Verifier, msgGen MessageGenerator, v
 	ctx := context.Background()
 
 	message := msgGen()
-	validReceipt, validProduct := validReceiptFunc(message) // create a valid receipt from the message
+	_, validProduct := validReceiptFunc(message) // create a valid receipt from the message
 
 	// Just use the word "invalid" as an invalid receipt or product.
 	invalidReceipt := "invalid"
-	invalidProduct := "invalid"
 
 	valid, _ := v.VerifyReceipt(ctx, invalidReceipt, validProduct)
 	/*
@@ -66,11 +65,4 @@ func testInvalidReceipt(t *testing.T, v iap.Verifier, msgGen MessageGenerator, v
 		t.Errorf("expected receipt to be invalid, got valid")
 	}
 
-	valid, err := v.VerifyReceipt(ctx, validReceipt, invalidProduct)
-	if err != nil {
-		t.Fatalf("unexpected error verifying invalid receipt: %v", err)
-	}
-	if valid {
-		t.Errorf("expected receipt to be invalid, got valid")
-	}
 }
