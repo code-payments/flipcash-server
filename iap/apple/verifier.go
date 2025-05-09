@@ -2,7 +2,6 @@ package apple
 
 import (
 	"context"
-	"errors"
 
 	"github.com/devsisters/go-applereceipt"
 	"github.com/devsisters/go-applereceipt/applepki"
@@ -42,14 +41,13 @@ func (m *AppleVerifier) VerifyReceipt(ctx context.Context, receipt, product stri
 			return false, nil
 		}
 
-		if len(receipt.InAppPurchaseReceipts) != 1 {
-			return false, errors.New("expected exactly one iap receipt")
-		}
+		// NOTE: this is omitted because Apple may not provide it as part of the envelope.
+		// See https://developer.apple.com/library/archive/releasenotes/General/ValidateAppStoreReceipt/Chapters/ReceiptFields.html
 
 		// Verify the that the receipt is for the correct product.
-		if receipt.InAppPurchaseReceipts[0].ProductIdentifier != product {
-			return false, nil
-		}
+		//if receipt.InAppPurchaseReceipts[0].ProductIdentifier != product {
+		//	return false, nil
+		//}
 
 		return true, nil
 	}()
