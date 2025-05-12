@@ -55,7 +55,7 @@ func (i *Integration) AllowReceivePayments(ctx context.Context, owner *codecommo
 	if !isPublic {
 		return false, "flipcash payments must be public", nil
 	}
-	return false, "receive payments intent is temporarily disabled for flipcash", nil
+	return true, "", nil
 }
 
 func (i *Integration) AllowSwap(ctx context.Context, _ *codecommon.Account) (bool, string, error) {
