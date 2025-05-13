@@ -16,6 +16,7 @@ import (
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
 	codeintent "github.com/code-payments/code-server/pkg/code/data/intent"
+	codetransaction "github.com/code-payments/code-server/pkg/code/server/transaction"
 	codecurrency "github.com/code-payments/code-server/pkg/currency"
 	codequery "github.com/code-payments/code-server/pkg/database/query"
 	"github.com/code-payments/code-server/pkg/pointer"
@@ -231,6 +232,8 @@ func (s *Server) getNotificationsFromBatchIntents(ctx context.Context, log *zap.
 }
 
 func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, userOwnerAccount *codecommon.Account, intentRecords []*codeintent.Record) ([]*activitypb.Notification, error) {
+	welcomeBonusIntentID := codetransaction.GetNewAirdropIntentId(codetransaction.AirdropTypeGetFirstCrypto, userOwnerAccount.PublicKey().ToBase58())
+
 	var notifications []*activitypb.Notification
 	for _, intentRecord := range intentRecords {
 		rawNotificationID, err := base58.Decode(intentRecord.IntentId)
@@ -279,9 +282,10 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 					notification.AdditionalMetadata = &activitypb.Notification_GaveUsdc{GaveUsdc: &activitypb.GaveUsdcNotificationMetadata{}}
 				}
 			} else {
-				_, ok := s.knownAirdropAccounts[intentRecord.InitiatorOwnerAccount]
-				if ok {
+				if intentRecord.IntentId == welcomeBonusIntentID {
 					notification.AdditionalMetadata = &activitypb.Notification_WelcomeBonus{WelcomeBonus: &activitypb.WelcomeBonusNotificationMetadata{}}
+				} else if intentMetadata.IsWithdrawal {
+					notification.AdditionalMetadata = &activitypb.Notification_DepositedUsdc{DepositedUsdc: &activitypb.DepositedUsdcNotificationMetadata{}}
 				} else {
 					notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
 				}
