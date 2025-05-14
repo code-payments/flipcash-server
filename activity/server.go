@@ -38,8 +38,6 @@ type Server struct {
 	authz    auth.Authorizer
 	codeData codedata.Provider
 
-	knownAirdropAccounts map[string]any
-
 	activitypb.UnimplementedActivityFeedServer
 }
 
@@ -47,19 +45,11 @@ func NewServer(
 	log *zap.Logger,
 	authz auth.Authorizer,
 	codeData codedata.Provider,
-	airdropOwnerPublicKeys []string,
 ) *Server {
-	knownAirdropAccounts := make(map[string]any)
-	for _, airdropOwnerPublicKey := range airdropOwnerPublicKeys {
-		knownAirdropAccounts[airdropOwnerPublicKey] = struct{}{}
-	}
-
 	return &Server{
 		log:      log,
 		authz:    authz,
 		codeData: codeData,
-
-		knownAirdropAccounts: knownAirdropAccounts,
 	}
 }
 
