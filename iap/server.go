@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/code-payments/flipcash-server/account"
 	"github.com/code-payments/flipcash-server/auth"
+	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/model"
 )
 
@@ -53,7 +55,6 @@ func NewServer(
 	}
 }
 
-// todo: DB transaction for all calls
 func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseCompletedRequest) (*iappb.OnPurchaseCompletedResponse, error) {
 	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
@@ -123,31 +124,36 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 		return nil, status.Error(codes.Internal, "failed to check existing purchase")
 	}
 
-	switch product {
-	case ProductCreateAccount, ProductCreateAccountWithWelcomeBonus:
-		err = s.accounts.SetRegistrationFlag(ctx, userID, true)
-		if err != nil {
-			log.Warn("Failed to set registration flag", zap.Error(err))
-			return nil, status.Error(codes.Internal, "failed to set registration flag")
+	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
+		switch product {
+		case ProductCreateAccount, ProductCreateAccountWithWelcomeBonus:
+			err = s.accounts.SetRegistrationFlag(ctx, userID, true)
+			if err != nil {
+				return errors.Wrap(err, "error setting registration flag")
+			}
+		default:
+			return errors.New("product not implemented")
 		}
-	default:
-		log.Warn("Product not implemented")
-		return nil, status.Error(codes.Internal, "product not implemented")
-	}
 
-	err = s.iaps.CreatePurchase(ctx, &Purchase{
-		ReceiptID:       receiptID,
-		Platform:        req.Platform,
-		User:            userID,
-		Product:         product,
-		PaymentAmount:   float64(req.Metadata.Amount),
-		PaymentCurrency: strings.ToLower(req.Metadata.Currency),
-		State:           StateFulfilled,
-		CreatedAt:       time.Now(),
+		err = s.iaps.CreatePurchase(ctx, &Purchase{
+			ReceiptID:       receiptID,
+			Platform:        req.Platform,
+			User:            userID,
+			Product:         product,
+			PaymentAmount:   float64(req.Metadata.Amount),
+			PaymentCurrency: strings.ToLower(req.Metadata.Currency),
+			State:           StateFulfilled,
+			CreatedAt:       time.Now(),
+		})
+		if err != nil {
+			return errors.Wrap(err, "ereror creating purchase")
+		}
+
+		return nil
 	})
 	if err != nil {
-		log.Warn("Failed to create purchase", zap.Error(err))
-		return nil, status.Error(codes.Internal, "failed to create purchase")
+		log.Warn("Failed to execute purchase fulfillment database transaction", zap.Error(err))
+		return nil, status.Error(codes.Internal, "failed to execute purchase fulfillment database transaction")
 	}
 
 	return &iappb.OnPurchaseCompletedResponse{}, nil

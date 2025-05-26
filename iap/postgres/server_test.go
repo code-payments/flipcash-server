@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	account "github.com/code-payments/flipcash-server/account/postgres"
+	pg "github.com/code-payments/flipcash-server/database/postgres"
 	"github.com/code-payments/flipcash-server/iap"
 	iap_memory "github.com/code-payments/flipcash-server/iap/memory"
 	"github.com/code-payments/flipcash-server/iap/tests"
@@ -21,6 +22,8 @@ func TestIap_PostgresServer(t *testing.T) {
 	pool, err := pgxpool.New(context.Background(), testEnv.DatabaseUrl)
 	require.NoError(t, err)
 	defer pool.Close()
+
+	pg.SetupGlobalPgxPool(pool)
 
 	pub, priv, err := iap_memory.GenerateKeyPair()
 	if err != nil {

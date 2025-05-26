@@ -7,7 +7,10 @@ import (
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound       = errors.New("not found")
+	ErrManyPublicKeys = errors.New("detected multiple keys for user")
+)
 
 type Store interface {
 	// Bind binds a public key to a UserId, or returns the previously bound UserId.

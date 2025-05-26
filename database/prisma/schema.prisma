@@ -35,7 +35,7 @@ model PublicKey {
   // Fields
 
   key    String @id
-  userId String
+  userId String @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

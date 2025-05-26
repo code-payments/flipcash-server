@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"strings"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
@@ -21,24 +23,22 @@ const (
 )
 
 func dbBind(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, pubKey *commonpb.PublicKey) error {
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		upsertUserQuery := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, false, false, NOW(), NOW()) ON CONFLICT ("id") DO NOTHING`
+		_, err := tx.Exec(ctx, upsertUserQuery, pg.Encode(userID.Value))
+		if err != nil {
+			return err
+		}
 
-	upsertUserQuery := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, false, false, NOW(), NOW()) ON CONFLICT ("id") DO NOTHING`
-	_, err = tx.Exec(ctx, upsertUserQuery, pg.Encode(userID.Value))
-	if err != nil {
+		putPubkeyQuery := `INSERT INTO ` + publicKeysTableName + ` (` + allPublicKeyFields + `) VALUES ($1, $2, NOW(), NOW())`
+		_, err = tx.Exec(ctx, putPubkeyQuery, pg.Encode(pubKey.Value, pg.Base58), pg.Encode(userID.Value))
+		if err == nil {
+			return nil
+		} else if strings.Contains(err.Error(), "23505") { // todo: better utility for detecting unique violations with pgx.Tx
+			return account.ErrManyPublicKeys
+		}
 		return err
-	}
-
-	putPubkeyQuery := `INSERT INTO ` + publicKeysTableName + ` (` + allPublicKeyFields + `) VALUES ($1, $2, NOW(), NOW())`
-	_, err = tx.Exec(ctx, putPubkeyQuery, pg.Encode(pubKey.Value, pg.Base58), pg.Encode(userID.Value))
-	if err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+	})
 }
 
 func dbGetUserId(ctx context.Context, pool *pgxpool.Pool, pubKey *commonpb.PublicKey) (*commonpb.UserId, error) {
@@ -125,13 +125,15 @@ func dbIsRegistered(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.Us
 }
 
 func dbSetRegistrationFlag(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, isRegistered bool) error {
-	query := `UPDATE ` + usersTableName + ` SET "isRegistered" = $1 WHERE "id" = $2`
-	res, err := pool.Exec(ctx, query, isRegistered, pg.Encode(userID.Value))
-	if err != nil {
-		return err
-	}
-	if res.RowsAffected() == 0 {
-		return account.ErrNotFound
-	}
-	return nil
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		query := `UPDATE ` + usersTableName + ` SET "isRegistered" = $1 WHERE "id" = $2`
+		res, err := tx.Exec(ctx, query, isRegistered, pg.Encode(userID.Value))
+		if err != nil {
+			return err
+		}
+		if res.RowsAffected() == 0 {
+			return account.ErrNotFound
+		}
+		return nil
+	})
 }

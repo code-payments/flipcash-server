@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
@@ -65,26 +66,28 @@ func fromModel(m *model) (*iap.Purchase, error) {
 }
 
 func (m *model) dbPut(ctx context.Context, pool *pgxpool.Pool) error {
-	query := `INSERT INTO ` + iapsTableName + `(` + allIapFields + `) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING ` + allIapFields
-	err := pgxscan.Get(
-		ctx,
-		pool,
-		m,
-		query,
-		m.ReceiptID,
-		m.Platform,
-		m.UserID,
-		m.Product,
-		m.PaymentAmount,
-		m.PaymentCurrency,
-		m.State,
-	)
-	if err == nil {
-		return nil
-	} else if strings.Contains(err.Error(), "23505") { // todo: better utility for detecting unique violations
-		return iap.ErrExists
-	}
-	return err
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		query := `INSERT INTO ` + iapsTableName + `(` + allIapFields + `) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW()) RETURNING ` + allIapFields
+		err := pgxscan.Get(
+			ctx,
+			tx,
+			m,
+			query,
+			m.ReceiptID,
+			m.Platform,
+			m.UserID,
+			m.Product,
+			m.PaymentAmount,
+			m.PaymentCurrency,
+			m.State,
+		)
+		if err == nil {
+			return nil
+		} else if strings.Contains(err.Error(), "23505") { // todo: better utility for detecting unique violations with pgxscan
+			return iap.ErrExists
+		}
+		return err
+	})
 }
 
 func dbGetPurchaseByID(ctx context.Context, pool *pgxpool.Pool, receiptID []byte) (*model, error) {

@@ -50,6 +50,9 @@ func (m *memory) Bind(_ context.Context, userID *commonpb.UserId, pubKey *common
 	}
 
 	keys := m.users[string(userID.Value)]
+	if len(keys) > 0 {
+		return nil, account.ErrManyPublicKeys
+	}
 	keys = append(keys, string(pubKey.Value))
 	m.users[string(userID.Value)] = keys
 
