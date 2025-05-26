@@ -32,11 +32,18 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 				return err
 			}
 
-			isClaimedByUser, err := isClaimedGiftCardReturnedToSender(ctx, codeData, userOwnerAccount, giftCardVaultAccount)
+			intentRecord, err := codeData.GetGiftCardClaimedIntent(ctx, giftCardVaultAccount.PublicKey().ToBase58())
 			if err != nil {
 				return err
-			} else if isClaimedByUser {
-				localizedText = "Cancelled"
+			}
+
+			if intentRecord.InitiatorOwnerAccount == userOwnerAccount.PublicKey().ToBase58() {
+				if intentRecord.ReceivePaymentsPubliclyMetadata.IsIssuerVoidingGiftCard {
+					localizedText = "Cancelled"
+				}
+				if intentRecord.ReceivePaymentsPubliclyMetadata.IsReturned {
+					localizedText = "Returned"
+				}
 			}
 		}
 	case *activitypb.Notification_DepositedUsdc:

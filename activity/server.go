@@ -287,18 +287,6 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				continue
 			}
 
-			vaultAccount, err := codecommon.NewAccountFromPublicKeyString(intentMetadata.Source)
-			if err != nil {
-				return nil, err
-			}
-
-			isIssuedByUser, err := isGiftCardIssuedByUser(ctx, s.codeData, userOwnerAccount, vaultAccount)
-			if err != nil {
-				return nil, err
-			} else if isIssuedByUser {
-				continue
-			}
-
 			notification.PaymentAmount = &commonpb.PaymentAmount{
 				Currency:     string(intentMetadata.OriginalExchangeCurrency),
 				NativeAmount: intentMetadata.OriginalNativeAmount,
