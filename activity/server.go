@@ -222,7 +222,7 @@ func (s *Server) getNotificationsFromBatchIntents(ctx context.Context, log *zap.
 }
 
 func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, userOwnerAccount *codecommon.Account, intentRecords []*codeintent.Record) ([]*activitypb.Notification, error) {
-	welcomeBonusIntentID := codetransaction.GetNewAirdropIntentId(codetransaction.AirdropTypeGetFirstCrypto, userOwnerAccount.PublicKey().ToBase58())
+	welcomeBonusIntentID := codetransaction.GetAirdropIntentId(codetransaction.AirdropTypeWelcomeBonus, userOwnerAccount.PublicKey().ToBase58())
 
 	var notifications []*activitypb.Notification
 	for _, intentRecord := range intentRecords {
