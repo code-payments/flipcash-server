@@ -5,8 +5,8 @@ go 1.24.0
 require (
 	firebase.google.com/go/v4 v4.15.2
 	github.com/ReneKroon/ttlcache v1.7.0
-	github.com/code-payments/code-protobuf-api v1.19.1-0.20250602171721-c057e3310d81
-	github.com/code-payments/code-server v1.10.21-0.20250602175340-14994bcce594
+	github.com/code-payments/code-protobuf-api v1.19.1-0.20250605155512-63da5d11d58a
+	github.com/code-payments/code-server v1.10.21-0.20250609150718-54647f50c66a
 	github.com/code-payments/flipcash-protobuf-api v1.3.3
 	github.com/devsisters/go-applereceipt v0.0.0-20240805020915-fa22a0160fc2
 	github.com/georgysavva/scany/v2 v2.1.4
@@ -34,6 +34,7 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
 	dario.cat/mergo v1.0.0 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
