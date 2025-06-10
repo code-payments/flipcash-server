@@ -152,6 +152,11 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 		return nil
 	})
 	if err != nil {
+		purchase, err2 := s.iaps.GetPurchaseByID(ctx, receiptID)
+		if err2 == nil && bytes.Equal(userID.Value, purchase.User.Value) {
+			return &iappb.OnPurchaseCompletedResponse{}, nil
+		}
+
 		log.Warn("Failed to execute purchase fulfillment database transaction", zap.Error(err))
 		return nil, status.Error(codes.Internal, "failed to execute purchase fulfillment database transaction")
 	}
