@@ -45,7 +45,7 @@ func (i *Integration) GetWelcomeBonusAmount(ctx context.Context, owner *codecomm
 	}
 	purchase := purchases[0]
 	for _, otherPurchase := range purchases {
-		if otherPurchase.PaymentCurrency != purchase.PaymentCurrency || otherPurchase.PaymentAmount != otherPurchase.PaymentAmount {
+		if otherPurchase.PaymentCurrency != purchase.PaymentCurrency || otherPurchase.PaymentAmount != purchase.PaymentAmount {
 			return 0, "", errors.New("user has multiple account creation with welcome bonus purchases")
 		}
 	}
