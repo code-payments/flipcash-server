@@ -33,22 +33,42 @@ func (i *Integration) GetWelcomeBonusAmount(ctx context.Context, owner *codecomm
 		return 0, "", err
 	}
 
+	var allAirdropPurchases []*iap.Purchase
+
 	purchases, err := i.iaps.GetPurchasesByUserAndProduct(ctx, userID, iap.ProductCreateAccountWithWelcomeBonus)
-	if err == iap.ErrNotFound {
-		return 0, "", nil
-	} else if err != nil {
+	switch err {
+	case nil:
+		for _, purchase := range purchases {
+			if purchase.Platform == commonpb.Platform_GOOGLE {
+				allAirdropPurchases = append(allAirdropPurchases, purchase)
+			}
+		}
+	case iap.ErrNotFound:
+	default:
 		return 0, "", err
 	}
 
-	if len(purchases) == 0 {
-		return 0, "", nil
-	}
-	purchase := purchases[0]
-	for _, otherPurchase := range purchases {
-		if otherPurchase.PaymentCurrency != purchase.PaymentCurrency || otherPurchase.PaymentAmount != purchase.PaymentAmount {
-			return 0, "", errors.New("user has multiple account creation with welcome bonus purchases")
+	purchases, err = i.iaps.GetPurchasesByUserAndProduct(ctx, userID, iap.ProductCreateAccount)
+	switch err {
+	case nil:
+		for _, purchase := range purchases {
+			if purchase.Platform == commonpb.Platform_APPLE {
+				allAirdropPurchases = append(allAirdropPurchases, purchase)
+			}
 		}
+	case iap.ErrNotFound:
+	default:
+		return 0, "", err
 	}
 
+	if len(allAirdropPurchases) == 0 {
+		return 0, "", nil
+	}
+	purchase := allAirdropPurchases[0]
+	for _, otherPurchase := range allAirdropPurchases {
+		if otherPurchase.PaymentCurrency != purchase.PaymentCurrency || otherPurchase.PaymentAmount != purchase.PaymentAmount {
+			return 0, "", errors.New("user has multiple conflicting airdrop iaps")
+		}
+	}
 	return purchase.PaymentAmount, codecurrency.Code(purchase.PaymentCurrency), nil
 }
