@@ -85,6 +85,10 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 	case CreateAccountProductID, strings.ToLower(CreateAccountProductID):
 		product = ProductCreateAccount
 	case CreateAccountWithWelcomeBonusProductID, strings.ToLower(CreateAccountWithWelcomeBonusProductID):
+		if req.Platform == commonpb.Platform_APPLE {
+			// Latest iOS builds only support CreateAccountProductID
+			return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_DENIED}, nil
+		}
 		product = ProductCreateAccountWithWelcomeBonus
 	default:
 		log.Warn("Invalid product in metadata")
