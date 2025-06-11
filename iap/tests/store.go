@@ -28,7 +28,7 @@ func testIapStore_HappyPath(t *testing.T, store iap.Store) {
 		ReceiptID:       []byte("receipt"),
 		Platform:        commonpb.Platform_APPLE,
 		User:            model.MustGenerateUserID(),
-		Product:         iap.ProductCreateAccount,
+		Product:         iap.ProductCreateAccountBonusApple,
 		PaymentAmount:   1.23,
 		PaymentCurrency: "usd",
 		State:           iap.StateFulfilled,
@@ -38,7 +38,7 @@ func testIapStore_HappyPath(t *testing.T, store iap.Store) {
 	_, err := store.GetPurchaseByID(context.Background(), expected.ReceiptID)
 	require.Equal(t, iap.ErrNotFound, err)
 
-	_, err = store.GetPurchasesByUserAndProduct(context.Background(), expected.User, iap.ProductCreateAccount)
+	_, err = store.GetPurchasesByUserAndProduct(context.Background(), expected.User, iap.ProductCreateAccountBonusApple)
 	require.Equal(t, iap.ErrNotFound, err)
 
 	require.NoError(t, store.CreatePurchase(context.Background(), expected))
@@ -53,13 +53,13 @@ func testIapStore_HappyPath(t *testing.T, store iap.Store) {
 	require.Equal(t, expected.PaymentCurrency, actual.PaymentCurrency)
 	require.Equal(t, expected.State, actual.State)
 
-	_, err = store.GetPurchasesByUserAndProduct(context.Background(), expected.User, iap.ProductCreateAccountWithWelcomeBonus)
+	_, err = store.GetPurchasesByUserAndProduct(context.Background(), expected.User, iap.ProductCreateAccountBonusGoogle)
 	require.Equal(t, iap.ErrNotFound, err)
 
 	_, err = store.GetPurchasesByUserAndProduct(context.Background(), model.MustGenerateUserID(), iap.ProductCreateAccount)
 	require.Equal(t, iap.ErrNotFound, err)
 
-	byUserAndProduct, err := store.GetPurchasesByUserAndProduct(context.Background(), expected.User, iap.ProductCreateAccount)
+	byUserAndProduct, err := store.GetPurchasesByUserAndProduct(context.Background(), expected.User, iap.ProductCreateAccountBonusApple)
 	require.NoError(t, err)
 	require.Len(t, byUserAndProduct, 1)
 	require.Equal(t, expected.ReceiptID, byUserAndProduct[0].ReceiptID)

@@ -22,8 +22,9 @@ import (
 )
 
 const (
-	CreateAccountProductID                 = "com.flipcash.iap.createAccount"
-	CreateAccountWithWelcomeBonusProductID = "com.flipcash.iap.createAccountWithWelcomeBonus"
+	CreateAccountProductID     = "com.flipcash.iap.createAccount"
+	CreateAccountBonusGoogleID = "com.flipcash.iap.createAccountWithWelcomeBonus"
+	CreateAccountBonusAppleID  = "com.flipcash.iap.createAccountBonus"
 )
 
 type Server struct {
@@ -84,12 +85,16 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 	switch req.Metadata.Product {
 	case CreateAccountProductID, strings.ToLower(CreateAccountProductID):
 		product = ProductCreateAccount
-	case CreateAccountWithWelcomeBonusProductID, strings.ToLower(CreateAccountWithWelcomeBonusProductID):
+	case CreateAccountBonusGoogleID, strings.ToLower(CreateAccountBonusGoogleID):
 		if req.Platform == commonpb.Platform_APPLE {
-			// Latest iOS builds only support CreateAccountProductID
 			return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_DENIED}, nil
 		}
-		product = ProductCreateAccountWithWelcomeBonus
+		product = ProductCreateAccountBonusGoogle
+	case CreateAccountBonusAppleID, strings.ToLower(CreateAccountBonusAppleID):
+		if req.Platform == commonpb.Platform_GOOGLE {
+			return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_DENIED}, nil
+		}
+		product = ProductCreateAccountBonusApple
 	default:
 		log.Warn("Invalid product in metadata")
 		return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_INVALID_METADATA}, nil
@@ -130,7 +135,7 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 
 	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
 		switch product {
-		case ProductCreateAccount, ProductCreateAccountWithWelcomeBonus:
+		case ProductCreateAccount, ProductCreateAccountBonusGoogle, ProductCreateAccountBonusApple:
 			err = s.accounts.SetRegistrationFlag(ctx, userID, true)
 			if err != nil {
 				return errors.Wrap(err, "error setting registration flag")

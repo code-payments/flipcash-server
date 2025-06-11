@@ -35,10 +35,11 @@ func (i *Integration) GetWelcomeBonusAmount(ctx context.Context, owner *codecomm
 
 	var allAirdropPurchases []*iap.Purchase
 
-	purchases, err := i.iaps.GetPurchasesByUserAndProduct(ctx, userID, iap.ProductCreateAccountWithWelcomeBonus)
+	purchases, err := i.iaps.GetPurchasesByUserAndProduct(ctx, userID, iap.ProductCreateAccountBonusGoogle)
 	switch err {
 	case nil:
 		for _, purchase := range purchases {
+			// Because iOS transitioned to a new product ID after release
 			if purchase.Platform == commonpb.Platform_GOOGLE {
 				allAirdropPurchases = append(allAirdropPurchases, purchase)
 			}
@@ -48,14 +49,10 @@ func (i *Integration) GetWelcomeBonusAmount(ctx context.Context, owner *codecomm
 		return 0, "", err
 	}
 
-	purchases, err = i.iaps.GetPurchasesByUserAndProduct(ctx, userID, iap.ProductCreateAccount)
+	purchases, err = i.iaps.GetPurchasesByUserAndProduct(ctx, userID, iap.ProductCreateAccountBonusApple)
 	switch err {
 	case nil:
-		for _, purchase := range purchases {
-			if purchase.Platform == commonpb.Platform_APPLE {
-				allAirdropPurchases = append(allAirdropPurchases, purchase)
-			}
-		}
+		allAirdropPurchases = append(allAirdropPurchases, purchases...)
 	case iap.ErrNotFound:
 	default:
 		return 0, "", err

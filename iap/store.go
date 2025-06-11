@@ -20,7 +20,8 @@ type Product uint8
 const (
 	ProductUnknown Product = iota
 	ProductCreateAccount
-	ProductCreateAccountWithWelcomeBonus
+	ProductCreateAccountBonusGoogle
+	ProductCreateAccountBonusApple
 )
 
 type State uint8
