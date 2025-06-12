@@ -87,14 +87,14 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 		product = ProductCreateAccount
 	case CreateAccountBonusGoogleID, strings.ToLower(CreateAccountBonusGoogleID):
 		if req.Platform == commonpb.Platform_APPLE {
-			return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_DENIED}, nil
+			return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_INVALID_METADATA}, nil
 		}
 
 		// Product no longer supported
 		return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_DENIED}, nil
 	case CreateAccountBonusAppleID, strings.ToLower(CreateAccountBonusAppleID):
 		if req.Platform == commonpb.Platform_GOOGLE {
-			return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_DENIED}, nil
+			return &iappb.OnPurchaseCompletedResponse{Result: iappb.OnPurchaseCompletedResponse_INVALID_METADATA}, nil
 		}
 
 		// Product no longer supported
