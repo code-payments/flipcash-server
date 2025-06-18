@@ -7,9 +7,10 @@ require (
 	github.com/ReneKroon/ttlcache v1.7.0
 	github.com/code-payments/code-protobuf-api v1.19.1-0.20250605155512-63da5d11d58a
 	github.com/code-payments/code-server v1.10.21-0.20250609150718-54647f50c66a
-	github.com/code-payments/flipcash-protobuf-api v1.3.3
+	github.com/code-payments/flipcash-protobuf-api v1.4.5
 	github.com/devsisters/go-applereceipt v0.0.0-20240805020915-fa22a0160fc2
 	github.com/georgysavva/scany/v2 v2.1.4
+	github.com/gogo/protobuf v1.3.2
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
 	github.com/jackc/pgx/v5 v5.7.5
@@ -54,7 +55,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect

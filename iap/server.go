@@ -119,7 +119,7 @@ func (s *Server) OnPurchaseCompleted(ctx context.Context, req *iappb.OnPurchaseC
 		return nil, status.Error(codes.Internal, "failed to get receipt ID")
 	}
 
-	log = s.log.With(
+	log = log.With(
 		zap.String("receipt_id", base64.StdEncoding.EncodeToString(receiptID)),
 	)
 
