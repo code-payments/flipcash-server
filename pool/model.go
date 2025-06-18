@@ -2,42 +2,111 @@ package pool
 
 import (
 	"crypto/ed25519"
-	"errors"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/mr-tron/base58"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 )
 
 type Pool struct {
-	ID         *poolpb.PoolId
-	Creator    *commonpb.UserId
-	IsOpen     bool
-	Resolution *bool
+	ID                 *poolpb.PoolId
+	Creator            *commonpb.UserId
+	Name               string
+	BuyInCurrency      string
+	BuyInAmount        float64
+	FundingDestination *commonpb.PublicKey
+	IsOpen             bool
+	Resolution         *bool
+	CreatedAt          time.Time
+	Signature          *commonpb.Signature
 }
 
-func ToPoolModel(proto *poolpb.SignedPoolMetadata, signature *commonpb.Signature) (*Pool, error) {
-	return nil, errors.New("not implemented")
+func ToPoolModel(proto *poolpb.SignedPoolMetadata, signature *commonpb.Signature) *Pool {
+	model := &Pool{
+		ID:                 proto.Id,
+		Creator:            proto.Creator,
+		Name:               proto.Name,
+		BuyInCurrency:      proto.BuyIn.Currency,
+		BuyInAmount:        proto.BuyIn.NativeAmount,
+		FundingDestination: proto.FundingDestination,
+		IsOpen:             proto.IsOpen,
+		CreatedAt:          proto.CreatedAt.AsTime(),
+		Signature:          signature,
+	}
+	if proto.Resolution != nil {
+		resolution := proto.Resolution.GetBooleanResolution()
+		model.Resolution = &resolution
+	}
+	return model
 }
 
-func (p *Pool) ToProto() (*poolpb.PoolMetadata, error) {
-	return nil, errors.New("not implemented")
+func (p *Pool) ToProto() *poolpb.PoolMetadata {
+	proto := &poolpb.PoolMetadata{
+		VerifiedMetadata: &poolpb.SignedPoolMetadata{
+			Id:      p.ID,
+			Creator: p.Creator,
+			Name:    p.Name,
+			BuyIn: &commonpb.FiatPaymentAmount{
+				Currency:     p.BuyInCurrency,
+				NativeAmount: p.BuyInAmount,
+			},
+			FundingDestination: p.FundingDestination,
+			IsOpen:             p.IsOpen,
+			CreatedAt:          timestamppb.New(p.CreatedAt),
+		},
+		RendezvousSignature: p.Signature,
+	}
+	if p.Resolution != nil {
+		proto.VerifiedMetadata.Resolution = &poolpb.Resolution{
+			Kind: &poolpb.Resolution_BooleanResolution{
+				BooleanResolution: *p.Resolution,
+			},
+		}
+	}
+	return proto
 }
 
 type Bet struct {
-	PoolID          *poolpb.PoolId
-	ID              *poolpb.BetId
-	SelectedOutcome bool
+	PoolID            *poolpb.PoolId
+	ID                *poolpb.BetId
+	UserID            *commonpb.UserId
+	SelectedOutcome   bool
+	PayoutDestination *commonpb.PublicKey
+	Ts                time.Time
+	Signature         *commonpb.Signature
 }
 
-func ToBetModel(poolID *poolpb.PoolId, proto *poolpb.SignedBetMetadata, signature *commonpb.Signature) (*Bet, error) {
-	return nil, errors.New("not implemented")
+func ToBetModel(poolID *poolpb.PoolId, proto *poolpb.SignedBetMetadata, signature *commonpb.Signature) *Bet {
+	return &Bet{
+		PoolID:            poolID,
+		ID:                proto.BetId,
+		UserID:            proto.UserId,
+		SelectedOutcome:   proto.SelectedOutcome.GetBooleanOutcome(),
+		PayoutDestination: proto.PayoutDestination,
+		Ts:                proto.Ts.AsTime(),
+		Signature:         signature,
+	}
 }
 
-func (b *Bet) ToProto() (*poolpb.BetMetadata, error) {
-	return nil, errors.New("not implemented")
+func (b *Bet) ToProto() *poolpb.BetMetadata {
+	return &poolpb.BetMetadata{
+		VerifiedMetadata: &poolpb.SignedBetMetadata{
+			BetId:  b.ID,
+			UserId: b.UserID,
+			SelectedOutcome: &poolpb.BetOutcome{
+				Kind: &poolpb.BetOutcome_BooleanOutcome{
+					BooleanOutcome: b.SelectedOutcome,
+				},
+			},
+			PayoutDestination: b.PayoutDestination,
+			Ts:                timestamppb.New(b.Ts),
+		},
+		RendezvousSignature: b.Signature,
+	}
 }
 
 func VerifyPoolSignature(signedPool *poolpb.SignedPoolMetadata, signature *commonpb.Signature) bool {

@@ -44,14 +44,15 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 	if !VerifyPoolSignature(req.Pool, req.RendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
-
-	model, err := ToPoolModel(req.Pool, req.RendezvousSignature)
-	if err != nil {
-		log.With(zap.Error(err)).Warn("Failure converting pool to model")
-		return nil, status.Error(codes.Internal, "failure converting pool to model")
+	if !req.Pool.IsOpen {
+		return nil, status.Error(codes.InvalidArgument, "pool.is_open must be false")
+	}
+	if req.Pool.Resolution != nil {
+		return nil, status.Error(codes.InvalidArgument, "pool.resolution cannot be set")
 	}
 
-	// todo: add duplication checks (rendezvous and funding)
+	model := ToPoolModel(req.Pool, req.RendezvousSignature)
+
 	err = s.pools.CreatePool(ctx, model)
 	switch err {
 	case nil:
@@ -88,24 +89,14 @@ func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*pool
 		return nil, status.Error(codes.Internal, "failure getting bets")
 	}
 
-	protoPool, err := pool.ToProto()
-	if err != nil {
-		log.With(zap.Error(err)).Warn("Failure converting pool to proto")
-		return nil, status.Error(codes.Internal, "failure converting pool to proto")
-	}
+	protoPool := pool.ToProto()
 
 	for _, bet := range bets {
-		log := log.With(zap.String("bet_id", BetIDString(bet.ID)))
-
-		betProto, err := bet.ToProto()
-		if err != nil {
-			log.With(zap.Error(err)).Warn("Failure converting bet to proto")
-			return nil, status.Error(codes.Internal, "failure converting bet to proto")
-		}
+		// log := log.With(zap.String("bet_id", BetIDString(bet.ID)))
 
 		// todo: verify bet has been paid for
 
-		protoPool.Bets = append(protoPool.Bets, betProto)
+		protoPool.Bets = append(protoPool.Bets, bet.ToProto())
 	}
 
 	return &poolpb.GetPoolResponse{Pool: protoPool}, nil
@@ -142,14 +133,10 @@ func (s *Server) DeclarePoolOutcome(ctx context.Context, req *poolpb.DeclarePool
 		return &poolpb.DeclarePoolOutcomeResponse{}, nil
 	}
 
-	protoPool, err := pool.ToProto()
-	if err != nil {
-		log.With(zap.Error(err)).Warn("Failure converting pool to proto")
-		return nil, status.Error(codes.Internal, "failure converting pool to proto")
-	}
-	protoPool.VerifiedMetadata.IsOpen = false
-	protoPool.VerifiedMetadata.Resolution = req.Resolution
-	if !VerifyPoolSignature(protoPool.VerifiedMetadata, req.NewRendezvousSignature) {
+	verifiedProtoPool := pool.ToProto().VerifiedMetadata
+	verifiedProtoPool.IsOpen = false
+	verifiedProtoPool.Resolution = req.Resolution
+	if !VerifyPoolSignature(verifiedProtoPool, req.NewRendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 
@@ -178,12 +165,6 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 
-	model, err := ToBetModel(req.PoolId, req.Bet, req.RendezvousSignature)
-	if err != nil {
-		log.With(zap.Error(err)).Warn("Failure converting bet to model")
-		return nil, status.Error(codes.Internal, "failure converting bet to model")
-	}
-
 	pool, err := s.pools.GetPool(ctx, req.PoolId)
 	switch err {
 	case nil:
@@ -196,6 +177,8 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 	if !pool.IsOpen {
 		return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_POOL_CLOSED}, nil
 	}
+
+	model := ToBetModel(req.PoolId, req.Bet, req.RendezvousSignature)
 
 	err = s.pools.CreateBet(ctx, model)
 	switch err {
