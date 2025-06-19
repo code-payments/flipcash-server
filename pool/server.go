@@ -14,6 +14,10 @@ import (
 	"github.com/code-payments/flipcash-server/model"
 )
 
+const (
+	MaxParticipants = 100
+)
+
 type Server struct {
 	log   *zap.Logger
 	auth  auth.Authorizer
@@ -30,6 +34,8 @@ func NewServer(log *zap.Logger, auth auth.Authorizer, pools Store) *Server {
 	}
 }
 
+// todo: Add timestamp validation
+// todo: Add buy in amount validation (min/max)
 func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) (*poolpb.CreatePoolResponse, error) {
 	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
 	if err != nil {
@@ -102,7 +108,7 @@ func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*pool
 	return &poolpb.GetPoolResponse{Pool: protoPool}, nil
 }
 
-func (s *Server) DeclarePoolOutcome(ctx context.Context, req *poolpb.DeclarePoolOutcomeRequest) (*poolpb.DeclarePoolOutcomeResponse, error) {
+func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest) (*poolpb.ResolvePoolResponse, error) {
 	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
@@ -117,20 +123,20 @@ func (s *Server) DeclarePoolOutcome(ctx context.Context, req *poolpb.DeclarePool
 	switch err {
 	case nil:
 	case ErrPoolNotFound:
-		return &poolpb.DeclarePoolOutcomeResponse{Result: poolpb.DeclarePoolOutcomeResponse_NOT_FOUND}, nil
+		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_NOT_FOUND}, nil
 	default:
 		log.With(zap.Error(err)).Warn("Failure getting pool")
 		return nil, status.Error(codes.Internal, "failure getting pool")
 	}
 
 	if !bytes.Equal(userID.Value, pool.Creator.Value) {
-		return &poolpb.DeclarePoolOutcomeResponse{Result: poolpb.DeclarePoolOutcomeResponse_DENIED}, nil
+		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_DENIED}, nil
 	}
 	if pool.Resolution != nil {
 		if *pool.Resolution != req.Resolution.GetBooleanResolution() {
-			return &poolpb.DeclarePoolOutcomeResponse{Result: poolpb.DeclarePoolOutcomeResponse_DIFFERENT_OUTCOME_DECLARED}, nil
+			return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_DIFFERENT_OUTCOME_DECLARED}, nil
 		}
-		return &poolpb.DeclarePoolOutcomeResponse{}, nil
+		return &poolpb.ResolvePoolResponse{}, nil
 	}
 
 	verifiedProtoPool := pool.ToProto().VerifiedMetadata
@@ -146,9 +152,11 @@ func (s *Server) DeclarePoolOutcome(ctx context.Context, req *poolpb.DeclarePool
 		return nil, status.Error(codes.Internal, "failure persisting pool resolution")
 	}
 
-	return &poolpb.DeclarePoolOutcomeResponse{}, nil
+	return &poolpb.ResolvePoolResponse{}, nil
 }
 
+// todo: Implement max participant count
+// todo: Add timestamp validation
 func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*poolpb.MakeBetResponse, error) {
 	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
 	if err != nil {
