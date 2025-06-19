@@ -3,6 +3,7 @@ package pool
 import (
 	"bytes"
 	"context"
+	"time"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -16,6 +17,7 @@ import (
 
 const (
 	MaxParticipants = 100
+	maxTsDelta      = 5 * time.Second
 )
 
 type Server struct {
@@ -34,7 +36,6 @@ func NewServer(log *zap.Logger, auth auth.Authorizer, pools Store) *Server {
 	}
 }
 
-// todo: Add timestamp validation
 // todo: Add buy in amount validation (min/max)
 func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) (*poolpb.CreatePoolResponse, error) {
 	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
@@ -55,6 +56,11 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 	}
 	if req.Pool.Resolution != nil {
 		return nil, status.Error(codes.InvalidArgument, "pool.resolution cannot be set")
+	}
+	if req.Pool.CreatedAt.AsTime().After(time.Now().Add(maxTsDelta)) {
+		return nil, status.Error(codes.InvalidArgument, "pool.created_at is invalid")
+	} else if req.Pool.CreatedAt.AsTime().Before(time.Now().Add(-maxTsDelta)) {
+		return nil, status.Error(codes.InvalidArgument, "pool.created_at is invalid")
 	}
 
 	model := ToPoolModel(req.Pool, req.RendezvousSignature)
@@ -155,8 +161,6 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 	return &poolpb.ResolvePoolResponse{}, nil
 }
 
-// todo: Implement max participant count
-// todo: Add timestamp validation
 func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*poolpb.MakeBetResponse, error) {
 	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
 	if err != nil {
@@ -171,6 +175,11 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 
 	if !VerifyBetSignature(req.PoolId, req.Bet, req.RendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")
+	}
+	if req.Bet.Ts.AsTime().After(time.Now().Add(maxTsDelta)) {
+		return nil, status.Error(codes.InvalidArgument, "bet.ts is invalid")
+	} else if req.Bet.Ts.AsTime().Before(time.Now().Add(-maxTsDelta)) {
+		return nil, status.Error(codes.InvalidArgument, "bet.ts is invalid")
 	}
 
 	pool, err := s.pools.GetPool(ctx, req.PoolId)
@@ -204,6 +213,8 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 		if existing.SelectedOutcome != req.Bet.SelectedOutcome.GetBooleanOutcome() {
 			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
 		}
+	case ErrMaxBetCountExceeded:
+		return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MAX_BETS_RECEIVED}, nil
 	default:
 		log.With(zap.Error(err)).Warn("Failure persisting bet")
 		return nil, status.Error(codes.Internal, "failure persisting bet")

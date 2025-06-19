@@ -88,6 +88,10 @@ func (s *InMemoryStore) CreateBet(_ context.Context, newBet *pool.Bet) error {
 		return pool.ErrBetExists
 	}
 
+	if len(s.findBetsByPool(newBet.PoolID)) >= pool.MaxParticipants {
+		return pool.ErrMaxBetCountExceeded
+	}
+
 	s.bets = append(s.bets, newBet.Clone())
 
 	return nil
