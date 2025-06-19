@@ -135,7 +135,7 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 		return nil, status.Error(codes.Internal, "failure getting pool")
 	}
 
-	if !bytes.Equal(userID.Value, pool.Creator.Value) {
+	if !bytes.Equal(userID.Value, pool.CreatorID.Value) {
 		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_DENIED}, nil
 	}
 	if pool.Resolution != nil {
@@ -202,14 +202,21 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 	case nil:
 	case ErrBetExists:
 		existing, err := s.pools.GetBetByUser(ctx, req.PoolId, userID)
-		if err != nil {
+		switch err {
+		case nil:
+		case ErrBetNotFound:
+			// Someone else made a bet with the bet ID
+			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
+		default:
 			log.With(zap.Error(err)).Warn("Failure getting bet")
 			return nil, status.Error(codes.Internal, "failure getting bet")
 		}
 
+		// User made a bet with a different ID for this pool
 		if !bytes.Equal(existing.ID.Value, req.Bet.BetId.Value) {
 			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
 		}
+		// User made a bet with a different outcome for this pool
 		if existing.SelectedOutcome != req.Bet.SelectedOutcome.GetBooleanOutcome() {
 			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
 		}

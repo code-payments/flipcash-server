@@ -3,7 +3,6 @@ package memory
 import (
 	"bytes"
 	"context"
-	"errors"
 	"sync"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
@@ -45,7 +44,7 @@ func (s *InMemoryStore) CreatePool(_ context.Context, newPool *pool.Pool) error 
 
 	s.pools = append(s.pools, newPool.Clone())
 
-	return errors.New("not implemented")
+	return nil
 }
 
 func (s *InMemoryStore) GetPool(_ context.Context, poolID *poolpb.PoolId) (*pool.Pool, error) {
@@ -83,7 +82,12 @@ func (s *InMemoryStore) CreateBet(_ context.Context, newBet *pool.Bet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	existing := s.findBetByPoolAndUser(newBet.PoolID, newBet.UserID)
+	existing := s.findBetByID(newBet.ID)
+	if existing != nil {
+		return pool.ErrBetExists
+	}
+
+	existing = s.findBetByPoolAndUser(newBet.PoolID, newBet.UserID)
 	if existing != nil {
 		return pool.ErrBetExists
 	}
@@ -134,6 +138,15 @@ func (s *InMemoryStore) findPoolByFundingDestination(fundingDestination *commonp
 	for _, pool := range s.pools {
 		if bytes.Equal(pool.FundingDestination.Value, fundingDestination.Value) {
 			return pool
+		}
+	}
+	return nil
+}
+
+func (s *InMemoryStore) findBetByID(betID *poolpb.BetId) *pool.Bet {
+	for _, bet := range s.bets {
+		if bytes.Equal(bet.ID.Value, betID.Value) {
+			return bet
 		}
 	}
 	return nil

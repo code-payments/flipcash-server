@@ -4,17 +4,18 @@ import (
 	"crypto/ed25519"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/mr-tron/base58"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
+	"github.com/code-payments/flipcash-server/model"
 )
 
 type Pool struct {
 	ID                 *poolpb.PoolId
-	Creator            *commonpb.UserId
+	CreatorID          *commonpb.UserId
 	Name               string
 	BuyInCurrency      string
 	BuyInAmount        float64
@@ -28,7 +29,7 @@ type Pool struct {
 func ToPoolModel(proto *poolpb.SignedPoolMetadata, signature *commonpb.Signature) *Pool {
 	model := &Pool{
 		ID:                 proto.Id,
-		Creator:            proto.Creator,
+		CreatorID:          proto.Creator,
 		Name:               proto.Name,
 		BuyInCurrency:      proto.BuyIn.Currency,
 		BuyInAmount:        proto.BuyIn.NativeAmount,
@@ -47,7 +48,7 @@ func ToPoolModel(proto *poolpb.SignedPoolMetadata, signature *commonpb.Signature
 func (p *Pool) Clone() *Pool {
 	cloned := &Pool{
 		ID:                 proto.Clone(p.ID).(*poolpb.PoolId),
-		Creator:            proto.Clone(p.Creator).(*commonpb.UserId),
+		CreatorID:          proto.Clone(p.CreatorID).(*commonpb.UserId),
 		Name:               p.Name,
 		BuyInCurrency:      p.BuyInCurrency,
 		BuyInAmount:        p.BuyInAmount,
@@ -77,7 +78,7 @@ func (p *Pool) ToProto() *poolpb.PoolMetadata {
 	proto := &poolpb.PoolMetadata{
 		VerifiedMetadata: &poolpb.SignedPoolMetadata{
 			Id:      p.ID,
-			Creator: p.Creator,
+			Creator: p.CreatorID,
 			Name:    p.Name,
 			BuyIn: &commonpb.FiatPaymentAmount{
 				Currency:     p.BuyInCurrency,
@@ -174,11 +175,19 @@ func VerifyBetSignature(poolID *poolpb.PoolId, signedBet *poolpb.SignedBetMetada
 	return ed25519.Verify(poolID.Value, marshalled, signature.Value)
 }
 
+func ToPoolID(keyPair model.KeyPair) *poolpb.PoolId {
+	return &poolpb.PoolId{Value: keyPair.Proto().Value}
+}
+
 func PoolIDString(id *poolpb.PoolId) string {
 	if id == nil {
 		return "<nil>"
 	}
 	return base58.Encode(id.Value)
+}
+
+func ToBetID(keyPair model.KeyPair) *poolpb.BetId {
+	return &poolpb.BetId{Value: keyPair.Proto().Value}
 }
 
 func BetIDString(id *poolpb.BetId) string {
