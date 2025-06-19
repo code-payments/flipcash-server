@@ -44,6 +44,35 @@ func ToPoolModel(proto *poolpb.SignedPoolMetadata, signature *commonpb.Signature
 	return model
 }
 
+func (p *Pool) Clone() *Pool {
+	cloned := &Pool{
+		ID:                 proto.Clone(p.ID).(*poolpb.PoolId),
+		Creator:            proto.Clone(p.Creator).(*commonpb.UserId),
+		Name:               p.Name,
+		BuyInCurrency:      p.BuyInCurrency,
+		BuyInAmount:        p.BuyInAmount,
+		FundingDestination: proto.Clone(p.FundingDestination).(*commonpb.PublicKey),
+		IsOpen:             p.IsOpen,
+		CreatedAt:          p.CreatedAt,
+		Signature:          proto.Clone(p.Signature).(*commonpb.Signature),
+	}
+
+	if p.Resolution != nil {
+		value := *p.Resolution
+		cloned.Resolution = &value
+	}
+
+	return cloned
+}
+
+func ClonePools(pools []*Pool) []*Pool {
+	cloned := make([]*Pool, len(pools))
+	for i, pool := range pools {
+		cloned[i] = pool.Clone()
+	}
+	return cloned
+}
+
 func (p *Pool) ToProto() *poolpb.PoolMetadata {
 	proto := &poolpb.PoolMetadata{
 		VerifiedMetadata: &poolpb.SignedPoolMetadata{
@@ -90,6 +119,26 @@ func ToBetModel(poolID *poolpb.PoolId, proto *poolpb.SignedBetMetadata, signatur
 		Ts:                proto.Ts.AsTime(),
 		Signature:         signature,
 	}
+}
+
+func (b *Bet) Clone() *Bet {
+	return &Bet{
+		PoolID:            proto.Clone(b.PoolID).(*poolpb.PoolId),
+		ID:                proto.Clone(b.ID).(*poolpb.BetId),
+		UserID:            proto.Clone(b.UserID).(*commonpb.UserId),
+		SelectedOutcome:   b.SelectedOutcome,
+		PayoutDestination: proto.Clone(b.PayoutDestination).(*commonpb.PublicKey),
+		Ts:                b.Ts,
+		Signature:         proto.Clone(b.Signature).(*commonpb.Signature),
+	}
+}
+
+func CloneBets(bets []*Bet) []*Bet {
+	cloned := make([]*Bet, len(bets))
+	for i, bet := range bets {
+		cloned[i] = bet.Clone()
+	}
+	return cloned
 }
 
 func (b *Bet) ToProto() *poolpb.BetMetadata {
