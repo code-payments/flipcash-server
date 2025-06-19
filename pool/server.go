@@ -52,7 +52,7 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 	if !req.Pool.IsOpen {
-		return nil, status.Error(codes.InvalidArgument, "pool.is_open must be false")
+		return nil, status.Error(codes.InvalidArgument, "pool.is_open must be true")
 	}
 	if req.Pool.Resolution != nil {
 		return nil, status.Error(codes.InvalidArgument, "pool.resolution cannot be set")
