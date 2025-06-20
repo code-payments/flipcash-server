@@ -241,7 +241,7 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 		switch intentRecord.IntentType {
 		case codeintent.SendPublicPayment:
 			intentMetadata := intentRecord.SendPublicPaymentMetadata
-			notification.PaymentAmount = &commonpb.PaymentAmount{
+			notification.PaymentAmount = &commonpb.UsdcPaymentAmount{
 				Currency:     string(intentMetadata.ExchangeCurrency),
 				NativeAmount: intentMetadata.NativeAmount,
 				Quarks:       intentMetadata.Quantity,
@@ -287,7 +287,7 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				continue
 			}
 
-			notification.PaymentAmount = &commonpb.PaymentAmount{
+			notification.PaymentAmount = &commonpb.UsdcPaymentAmount{
 				Currency:     string(intentMetadata.OriginalExchangeCurrency),
 				NativeAmount: intentMetadata.OriginalNativeAmount,
 				Quarks:       intentMetadata.Quantity,
@@ -295,7 +295,7 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 			notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
 		case codeintent.ExternalDeposit:
 			intentMetadata := intentRecord.ExternalDepositMetadata
-			notification.PaymentAmount = &commonpb.PaymentAmount{
+			notification.PaymentAmount = &commonpb.UsdcPaymentAmount{
 				Currency:     string(codecurrency.USD),
 				NativeAmount: intentMetadata.UsdMarketValue,
 				Quarks:       intentMetadata.Quantity,
