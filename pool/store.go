@@ -23,7 +23,7 @@ type Store interface {
 	CreatePool(ctx context.Context, pool *Pool) error
 
 	// GetPool gets a betting pool by ID
-	GetPool(ctx context.Context, poolID *poolpb.PoolId) (*Pool, error)
+	GetPoolByID(ctx context.Context, poolID *poolpb.PoolId) (*Pool, error)
 
 	// ResolvePool resolves a pool with an outcome. If the pool is open, its state
 	// is also closed.

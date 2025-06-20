@@ -7,6 +7,7 @@ import (
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
+
 	"github.com/code-payments/flipcash-server/pool"
 )
 
@@ -47,7 +48,7 @@ func (s *InMemoryStore) CreatePool(_ context.Context, newPool *pool.Pool) error 
 	return nil
 }
 
-func (s *InMemoryStore) GetPool(_ context.Context, poolID *poolpb.PoolId) (*pool.Pool, error) {
+func (s *InMemoryStore) GetPoolByID(_ context.Context, poolID *poolpb.PoolId) (*pool.Pool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -82,6 +83,10 @@ func (s *InMemoryStore) CreateBet(_ context.Context, newBet *pool.Bet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if len(s.findBetsByPool(newBet.PoolID)) > pool.MaxParticipants {
+		return pool.ErrMaxBetCountExceeded
+	}
+
 	existing := s.findBetByID(newBet.ID)
 	if existing != nil {
 		return pool.ErrBetExists
@@ -90,10 +95,6 @@ func (s *InMemoryStore) CreateBet(_ context.Context, newBet *pool.Bet) error {
 	existing = s.findBetByPoolAndUser(newBet.PoolID, newBet.UserID)
 	if existing != nil {
 		return pool.ErrBetExists
-	}
-
-	if len(s.findBetsByPool(newBet.PoolID)) >= pool.MaxParticipants {
-		return pool.ErrMaxBetCountExceeded
 	}
 
 	s.bets = append(s.bets, newBet.Clone())

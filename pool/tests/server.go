@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
@@ -138,7 +139,7 @@ func testServer_Betting_HappyPath(t *testing.T, store pool.Store) {
 
 		makeBetResp, err := server.MakeBet(ctx, makeBetReq)
 		require.NoError(t, err)
-		if i >= pool.MaxParticipants {
+		if i > pool.MaxParticipants {
 			require.Equal(t, poolpb.MakeBetResponse_MAX_BETS_RECEIVED, makeBetResp.Result)
 			continue
 		}
@@ -206,7 +207,7 @@ func generateNewProtoPool(id *poolpb.PoolId) *poolpb.SignedPoolMetadata {
 		FundingDestination: model.MustGenerateKeyPair().Proto(),
 		IsOpen:             true,
 		Resolution:         nil,
-		CreatedAt:          timestamppb.Now(),
+		CreatedAt:          &timestamppb.Timestamp{Seconds: time.Now().Unix()},
 	}
 }
 
@@ -220,6 +221,6 @@ func generateNewProtoBet(outcome bool) *poolpb.SignedBetMetadata {
 			},
 		},
 		PayoutDestination: model.MustGenerateKeyPair().Proto(),
-		Ts:                timestamppb.Now(),
+		Ts:                &timestamppb.Timestamp{Seconds: time.Now().Unix()},
 	}
 }

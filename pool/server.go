@@ -17,7 +17,7 @@ import (
 
 const (
 	MaxParticipants = 100
-	maxTsDelta      = 5 * time.Second
+	maxTsDelta      = time.Minute
 )
 
 type Server struct {
@@ -57,6 +57,9 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 	if req.Pool.Resolution != nil {
 		return nil, status.Error(codes.InvalidArgument, "pool.resolution cannot be set")
 	}
+	if req.Pool.CreatedAt.Nanos > 0 {
+		return nil, status.Error(codes.InvalidArgument, "pool.created_at.nanos cannot be set")
+	}
 	if req.Pool.CreatedAt.AsTime().After(time.Now().Add(maxTsDelta)) {
 		return nil, status.Error(codes.InvalidArgument, "pool.created_at is invalid")
 	} else if req.Pool.CreatedAt.AsTime().Before(time.Now().Add(-maxTsDelta)) {
@@ -83,7 +86,7 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*poolpb.GetPoolResponse, error) {
 	log := s.log.With(zap.String("pool_id", PoolIDString(req.Id)))
 
-	pool, err := s.pools.GetPool(ctx, req.Id)
+	pool, err := s.pools.GetPoolByID(ctx, req.Id)
 	switch err {
 	case nil:
 	case ErrPoolNotFound:
@@ -125,7 +128,7 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 		zap.String("pool_id", PoolIDString(req.Id)),
 	)
 
-	pool, err := s.pools.GetPool(ctx, req.Id)
+	pool, err := s.pools.GetPoolByID(ctx, req.Id)
 	switch err {
 	case nil:
 	case ErrPoolNotFound:
@@ -176,13 +179,16 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 	if !VerifyBetSignature(req.PoolId, req.Bet, req.RendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
+	if req.Bet.Ts.Nanos > 0 {
+		return nil, status.Error(codes.InvalidArgument, "bet.ts.nanos cannot be set")
+	}
 	if req.Bet.Ts.AsTime().After(time.Now().Add(maxTsDelta)) {
 		return nil, status.Error(codes.InvalidArgument, "bet.ts is invalid")
 	} else if req.Bet.Ts.AsTime().Before(time.Now().Add(-maxTsDelta)) {
 		return nil, status.Error(codes.InvalidArgument, "bet.ts is invalid")
 	}
 
-	pool, err := s.pools.GetPool(ctx, req.PoolId)
+	pool, err := s.pools.GetPoolByID(ctx, req.PoolId)
 	switch err {
 	case nil:
 	case ErrBetNotFound:
@@ -204,24 +210,45 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 		existing, err := s.pools.GetBetByUser(ctx, req.PoolId, userID)
 		switch err {
 		case nil:
+			// User made a bet with a different ID for this pool
+			if !bytes.Equal(existing.ID.Value, req.Bet.BetId.Value) {
+				return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
+			}
+			// User made a bet with a different outcome for this pool
+			if existing.SelectedOutcome != req.Bet.SelectedOutcome.GetBooleanOutcome() {
+				return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
+			}
+
+			// We can proceed with an OK response, RPC call is a no-op for an existing bet
 		case ErrBetNotFound:
-			// Someone else made a bet with the bet ID
+			// Someone else made a bet with the same bet ID. This is unlikely to
+			// happen in practice.
 			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
 		default:
 			log.With(zap.Error(err)).Warn("Failure getting bet")
 			return nil, status.Error(codes.Internal, "failure getting bet")
 		}
-
-		// User made a bet with a different ID for this pool
-		if !bytes.Equal(existing.ID.Value, req.Bet.BetId.Value) {
-			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
-		}
-		// User made a bet with a different outcome for this pool
-		if existing.SelectedOutcome != req.Bet.SelectedOutcome.GetBooleanOutcome() {
-			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
-		}
 	case ErrMaxBetCountExceeded:
-		return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MAX_BETS_RECEIVED}, nil
+		existing, err := s.pools.GetBetByUser(ctx, req.PoolId, userID)
+		switch err {
+		case nil:
+			// User made a bet with a different ID for this pool
+			if !bytes.Equal(existing.ID.Value, req.Bet.BetId.Value) {
+				return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
+			}
+			// User made a bet with a different outcome for this pool
+			if existing.SelectedOutcome != req.Bet.SelectedOutcome.GetBooleanOutcome() {
+				return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
+			}
+
+			// We can proceed with an OK response, RPC call is a no-op for an existing bet
+		case ErrBetNotFound:
+			// The user doesn't have a bet. We've reached the limit
+			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MAX_BETS_RECEIVED}, nil
+		default:
+			log.With(zap.Error(err)).Warn("Failure getting bet")
+			return nil, status.Error(codes.Internal, "failure getting bet")
+		}
 	default:
 		log.With(zap.Error(err)).Warn("Failure persisting bet")
 		return nil, status.Error(codes.Internal, "failure persisting bet")

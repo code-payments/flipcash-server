@@ -32,7 +32,7 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 	poolID := pool.ToPoolID(rendezvousKey)
 	creatorID := model.MustGenerateUserID()
 
-	_, err := s.GetPool(ctx, poolID)
+	_, err := s.GetPoolByID(ctx, poolID)
 	require.Equal(t, pool.ErrPoolNotFound, err)
 
 	expected := &pool.Pool{
@@ -44,13 +44,13 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 		FundingDestination: model.MustGenerateKeyPair().Proto(),
 		IsOpen:             true,
 		Resolution:         nil,
-		CreatedAt:          time.Now(),
+		CreatedAt:          time.Now().UTC().Truncate(time.Second),
 		Signature:          &commonpb.Signature{Value: make([]byte, 64)},
 	}
 	rand.Read(expected.Signature.Value[:])
 	require.NoError(t, s.CreatePool(ctx, expected))
 
-	actual, err := s.GetPool(ctx, poolID)
+	actual, err := s.GetPoolByID(ctx, poolID)
 	require.NoError(t, err)
 	assertEquivalentPools(t, expected, actual)
 
@@ -58,7 +58,7 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 	rand.Read(expected.Signature.Value[:])
 	require.NoError(t, s.ResolvePool(ctx, poolID, true, newSignature))
 
-	actual, err = s.GetPool(ctx, poolID)
+	actual, err = s.GetPoolByID(ctx, poolID)
 	require.NoError(t, err)
 	require.False(t, actual.IsOpen)
 	require.Equal(t, true, *actual.Resolution)
@@ -99,13 +99,13 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 			UserID:            userID,
 			SelectedOutcome:   true,
 			PayoutDestination: model.MustGenerateKeyPair().Proto(),
-			Ts:                time.Now(),
+			Ts:                time.Now().UTC().Truncate(time.Second),
 			Signature:         &commonpb.Signature{Value: make([]byte, 64)},
 		}
 		rand.Read(expected.Signature.Value[:])
 
 		err = s.CreateBet(ctx, expected)
-		if i >= pool.MaxParticipants {
+		if i > pool.MaxParticipants {
 			require.Equal(t, pool.ErrMaxBetCountExceeded, err)
 
 			_, err = s.GetBetByUser(ctx, poolID, userID)
@@ -120,6 +120,10 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 		actual, err := s.GetBetByUser(ctx, poolID, userID)
 		require.NoError(t, err)
 		assertEquivalentBets(t, expected, actual)
+
+		if i >= pool.MaxParticipants {
+			continue
+		}
 
 		require.Equal(t, pool.ErrBetExists, s.CreateBet(ctx, expected))
 
@@ -149,7 +153,7 @@ func assertEquivalentPools(t *testing.T, obj1, obj2 *pool.Pool) {
 	require.NoError(t, protoutil.ProtoEqualError(obj1.FundingDestination, obj2.FundingDestination))
 	require.Equal(t, obj1.IsOpen, obj2.IsOpen)
 	require.EqualValues(t, obj1.Resolution, obj2.Resolution)
-	require.Equal(t, obj1.CreatedAt, obj2.CreatedAt)
+	require.Equal(t, obj1.CreatedAt.UTC(), obj2.CreatedAt.UTC())
 	require.NoError(t, protoutil.ProtoEqualError(obj1.Signature, obj2.Signature))
 }
 
@@ -159,6 +163,6 @@ func assertEquivalentBets(t *testing.T, obj1, obj2 *pool.Bet) {
 	require.NoError(t, protoutil.ProtoEqualError(obj1.UserID, obj2.UserID))
 	require.Equal(t, obj1.SelectedOutcome, obj2.SelectedOutcome)
 	require.NoError(t, protoutil.ProtoEqualError(obj1.PayoutDestination, obj2.PayoutDestination))
-	require.Equal(t, obj1.Ts, obj2.Ts)
+	require.Equal(t, obj1.Ts.UTC(), obj2.Ts.UTC())
 	require.NoError(t, protoutil.ProtoEqualError(obj1.Signature, obj2.Signature))
 }

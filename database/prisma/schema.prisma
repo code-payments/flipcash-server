@@ -85,3 +85,47 @@ model PushToken {
   @@id([userId, appInstallId])
   @@map("flipcash_pushtokens")
 }
+
+model Pool {
+  // Fields
+
+  id                 String  @id
+  creatorId          String
+  name               String
+  buyInCurrency      String
+  buyInAmount        Float
+  fundingDestination String  @unique
+  isOpen             Boolean
+  resolution         Boolean?
+  signature          String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+
+  // Constraints
+
+  @@map("flipcash_pools")
+}
+
+model Bet {
+  // Fields
+
+  id                String  @id
+  poolId            String
+  userId            String
+  selectedOutcome   Boolean
+  payoutDestination String
+  signature         String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+
+  // Constraints
+
+  @@unique([poolId, userId])
+  @@map("flipcash_bets")
+}
