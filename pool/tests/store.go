@@ -9,7 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
+	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
+	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/model"
 	"github.com/code-payments/flipcash-server/pool"
 	"github.com/code-payments/flipcash-server/protoutil"
@@ -19,6 +21,7 @@ func RunStoreTests(t *testing.T, s pool.Store, teardown func()) {
 	for _, tf := range []func(t *testing.T, s pool.Store){
 		testPoolStore_PoolHappyPath,
 		testPoolStore_BetHappyPath,
+		testPoolStore_MemberHappyPath,
 	} {
 		tf(t, s)
 		teardown()
@@ -28,8 +31,7 @@ func RunStoreTests(t *testing.T, s pool.Store, teardown func()) {
 func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 	ctx := context.Background()
 
-	rendezvousKey := model.MustGenerateKeyPair()
-	poolID := pool.ToPoolID(rendezvousKey)
+	poolID := pool.ToPoolID(model.MustGenerateKeyPair())
 	creatorID := model.MustGenerateUserID()
 
 	_, err := s.GetPoolByID(ctx, poolID)
@@ -78,16 +80,14 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 	ctx := context.Background()
 
-	rendezvousKey := model.MustGenerateKeyPair()
-	poolID := pool.ToPoolID(rendezvousKey)
+	poolID := pool.ToPoolID(model.MustGenerateKeyPair())
 
 	_, err := s.GetBetsByPool(ctx, poolID)
 	require.Equal(t, pool.ErrBetNotFound, err)
 
 	var allExpected []*pool.Bet
 	for i := 0; i < 2*pool.MaxParticipants; i++ {
-		intentID := model.MustGenerateKeyPair()
-		betID := pool.ToBetID(intentID)
+		betID := pool.ToBetID(model.MustGenerateKeyPair())
 		userID := model.MustGenerateUserID()
 
 		_, err = s.GetBetByUser(ctx, poolID, userID)
@@ -141,6 +141,95 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 	require.Len(t, allActual, len(allExpected))
 	for i, expected := range allExpected {
 		assertEquivalentBets(t, expected, allActual[i])
+	}
+}
+
+func testPoolStore_MemberHappyPath(t *testing.T, s pool.Store) {
+	ctx := context.Background()
+
+	userID := model.MustGenerateUserID()
+
+	_, err := s.GetPagedMembers(ctx, userID)
+	require.Equal(t, pool.ErrMemberNotFound, err)
+
+	var expectedPoolIDs []*poolpb.PoolId
+	for range 10 {
+		createdPoolID := pool.ToPoolID(model.MustGenerateKeyPair())
+		expectedPoolIDs = append(expectedPoolIDs, createdPoolID)
+		p := &pool.Pool{
+			ID:                 createdPoolID,
+			CreatorID:          userID,
+			Name:               "Will Flipcash go viral tomorrow?",
+			BuyInCurrency:      "usd",
+			BuyInAmount:        250.00,
+			FundingDestination: model.MustGenerateKeyPair().Proto(),
+			IsOpen:             true,
+			Resolution:         nil,
+			CreatedAt:          time.Now().UTC().Truncate(time.Second),
+			Signature:          &commonpb.Signature{Value: make([]byte, 64)},
+		}
+		rand.Read(p.Signature.Value[:])
+		require.NoError(t, s.CreatePool(ctx, p))
+
+		betPoolID := pool.ToPoolID(model.MustGenerateKeyPair())
+		expectedPoolIDs = append(expectedPoolIDs, betPoolID)
+		b := &pool.Bet{
+			PoolID:            betPoolID,
+			ID:                pool.ToBetID(model.MustGenerateKeyPair()),
+			UserID:            userID,
+			SelectedOutcome:   true,
+			PayoutDestination: model.MustGenerateKeyPair().Proto(),
+			Ts:                time.Now().UTC().Truncate(time.Second),
+			Signature:         &commonpb.Signature{Value: make([]byte, 64)},
+		}
+		rand.Read(b.Signature.Value[:])
+		require.NoError(t, s.CreateBet(ctx, b))
+	}
+
+	allActual, err := s.GetPagedMembers(ctx, userID)
+	require.NoError(t, err)
+	require.Len(t, allActual, len(expectedPoolIDs))
+	for i, expectedPoolID := range expectedPoolIDs {
+		require.NoError(t, protoutil.ProtoEqualError(expectedPoolID, allActual[i].PoolID))
+		require.NoError(t, protoutil.ProtoEqualError(userID, allActual[i].UserID))
+	}
+
+	reversedActual, err := s.GetPagedMembers(ctx, userID, database.WithDescending())
+	require.NoError(t, err)
+	require.Len(t, allActual, len(expectedPoolIDs))
+	for i, expectedPoolID := range expectedPoolIDs {
+		require.NoError(t, protoutil.ProtoEqualError(expectedPoolID, reversedActual[len(allActual)-i-1].PoolID))
+		require.NoError(t, protoutil.ProtoEqualError(userID, reversedActual[len(allActual)-i-1].UserID))
+	}
+
+	limitedActual, err := s.GetPagedMembers(ctx, userID, database.WithLimit(3))
+	require.NoError(t, err)
+	require.Len(t, limitedActual, 3)
+	for i, expectedPoolID := range expectedPoolIDs[:3] {
+		require.NoError(t, protoutil.ProtoEqualError(expectedPoolID, limitedActual[i].PoolID))
+		require.NoError(t, protoutil.ProtoEqualError(userID, limitedActual[i].UserID))
+	}
+
+	pagedActual, err := s.GetPagedMembers(ctx, userID, database.WithPagingToken(&commonpb.PagingToken{Value: allActual[5].ID}))
+	require.NoError(t, err)
+	require.Len(t, pagedActual, len(expectedPoolIDs[6:]))
+	for i, expectedPoolID := range expectedPoolIDs[6:] {
+		require.NoError(t, protoutil.ProtoEqualError(expectedPoolID, pagedActual[i].PoolID))
+		require.NoError(t, protoutil.ProtoEqualError(userID, pagedActual[i].UserID))
+	}
+
+	pagedActual, err = s.GetPagedMembers(
+		ctx,
+		userID,
+		database.WithPagingToken(&commonpb.PagingToken{Value: allActual[5].ID}),
+		database.WithLimit(2),
+		database.WithDescending(),
+	)
+	require.NoError(t, err)
+	require.Len(t, pagedActual, 2)
+	for i, expectedPoolID := range expectedPoolIDs[3:5] {
+		require.NoError(t, protoutil.ProtoEqualError(expectedPoolID, pagedActual[len(pagedActual)-i-1].PoolID))
+		require.NoError(t, protoutil.ProtoEqualError(userID, pagedActual[len(pagedActual)-i-1].UserID))
 	}
 }
 

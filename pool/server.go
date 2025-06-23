@@ -9,15 +9,18 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
 	"github.com/code-payments/flipcash-server/auth"
+	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/model"
 )
 
 const (
-	MaxParticipants = 100
-	maxTsDelta      = time.Minute
+	MaxParticipants      = 100
+	defaultMaxPagedPools = 1024
+	maxTsDelta           = time.Minute
 )
 
 type Server struct {
@@ -68,7 +71,9 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 
 	model := ToPoolModel(req.Pool, req.RendezvousSignature)
 
-	err = s.pools.CreatePool(ctx, model)
+	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
+		return s.pools.CreatePool(ctx, model)
+	})
 	switch err {
 	case nil:
 	case ErrPoolIDExists:
@@ -86,32 +91,12 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*poolpb.GetPoolResponse, error) {
 	log := s.log.With(zap.String("pool_id", PoolIDString(req.Id)))
 
-	pool, err := s.pools.GetPoolByID(ctx, req.Id)
-	switch err {
-	case nil:
-	case ErrPoolNotFound:
+	protoPool, err := s.getProtoPool(ctx, req.Id, true)
+	if err == ErrPoolNotFound {
 		return &poolpb.GetPoolResponse{Result: poolpb.GetPoolResponse_NOT_FOUND}, nil
-	default:
-		log.With(zap.Error(err)).Warn("Failure getting pool")
-		return nil, status.Error(codes.Internal, "failure getting pool")
-	}
-
-	bets, err := s.pools.GetBetsByPool(ctx, req.Id)
-	switch err {
-	case nil, ErrBetNotFound:
-	default:
-		log.With(zap.Error(err)).Warn("Failure getting bets")
-		return nil, status.Error(codes.Internal, "failure getting bets")
-	}
-
-	protoPool := pool.ToProto()
-
-	for _, bet := range bets {
-		// log := log.With(zap.String("bet_id", BetIDString(bet.ID)))
-
-		// todo: verify bet has been paid for
-
-		protoPool.Bets = append(protoPool.Bets, bet.ToProto())
+	} else if err != nil {
+		log.With(zap.Error(err)).Warn("Failure getting pool with bets")
+		return nil, status.Error(codes.Internal, "failure getting pool with bets")
 	}
 
 	return &poolpb.GetPoolResponse{Pool: protoPool}, nil
@@ -155,13 +140,54 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 
-	err = s.pools.ResolvePool(ctx, req.Id, req.Resolution.GetBooleanResolution(), req.NewRendezvousSignature)
+	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
+		return s.pools.ResolvePool(ctx, req.Id, req.Resolution.GetBooleanResolution(), req.NewRendezvousSignature)
+	})
 	if err != nil {
 		log.With(zap.Error(err)).Warn("Failure persisting pool resolution")
 		return nil, status.Error(codes.Internal, "failure persisting pool resolution")
 	}
 
 	return &poolpb.ResolvePoolResponse{}, nil
+}
+
+func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsRequest) (*poolpb.GetPagedPoolsResponse, error) {
+	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	if err != nil {
+		return nil, err
+	}
+
+	log := s.log.With(zap.String("user_id", model.UserIDString(userID)))
+
+	if req.QueryOptions != nil && req.QueryOptions.PageSize <= 0 {
+		req.QueryOptions.PageSize = defaultMaxPagedPools
+	}
+
+	memberships, err := s.pools.GetPagedMembers(ctx, userID, database.FromProtoQueryOptions(req.QueryOptions)...)
+	if err == ErrMemberNotFound {
+		return &poolpb.GetPagedPoolsResponse{Result: poolpb.GetPagedPoolsResponse_NOT_FOUND}, nil
+	} else if err != nil {
+		log.With(zap.Error(err)).Warn("Failure getting user memberships")
+		return nil, status.Error(codes.Internal, "failure getting user memberships")
+	}
+	if len(memberships) == 0 {
+		return &poolpb.GetPagedPoolsResponse{Result: poolpb.GetPagedPoolsResponse_NOT_FOUND}, nil
+	}
+
+	protoPools := make([]*poolpb.PoolMetadata, len(memberships))
+	for i, membership := range memberships {
+		log := log.With(zap.String("pool_id", PoolIDString(membership.PoolID)))
+
+		protoPool, err := s.getProtoPool(ctx, membership.PoolID, true)
+		if err != nil {
+			log.With(zap.Error(err)).Warn("Failure getting pool with bets")
+			return nil, status.Error(codes.Internal, "failure getting pool with bets")
+		}
+		protoPool.PagingToken = &commonpb.PagingToken{Value: membership.ID}
+
+		protoPools[i] = protoPool
+	}
+	return &poolpb.GetPagedPoolsResponse{Pools: protoPools}, nil
 }
 
 func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*poolpb.MakeBetResponse, error) {
@@ -203,7 +229,9 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 
 	model := ToBetModel(req.PoolId, req.Bet, req.RendezvousSignature)
 
-	err = s.pools.CreateBet(ctx, model)
+	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
+		return s.pools.CreateBet(ctx, model)
+	})
 	switch err {
 	case nil:
 	case ErrBetExists:
@@ -255,4 +283,34 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 	}
 
 	return &poolpb.MakeBetResponse{}, nil
+}
+
+func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, includeBets bool) (*poolpb.PoolMetadata, error) {
+	pool, err := s.pools.GetPoolByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	protoPool := pool.ToProto()
+
+	if !includeBets {
+		return protoPool, nil
+	}
+
+	bets, err := s.pools.GetBetsByPool(ctx, id)
+	switch err {
+	case nil, ErrBetNotFound:
+	default:
+		return nil, err
+	}
+
+	for _, bet := range bets {
+		// log := log.With(zap.String("bet_id", BetIDString(bet.ID)))
+
+		// todo: verify bet has been paid for
+
+		protoPool.Bets = append(protoPool.Bets, bet.ToProto())
+	}
+
+	return protoPool, nil
 }

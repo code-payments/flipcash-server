@@ -100,6 +100,30 @@ func (p *Pool) ToProto() *poolpb.PoolMetadata {
 	return proto
 }
 
+type Member struct {
+	ID     []byte
+	UserID *commonpb.UserId
+	PoolID *poolpb.PoolId
+}
+
+func (m *Member) Clone() *Member {
+	clonedID := make([]byte, len(m.ID))
+	copy(clonedID, m.ID)
+	return &Member{
+		ID:     clonedID,
+		UserID: proto.Clone(m.UserID).(*commonpb.UserId),
+		PoolID: proto.Clone(m.PoolID).(*poolpb.PoolId),
+	}
+}
+
+func CloneMembers(members []*Member) []*Member {
+	cloned := make([]*Member, len(members))
+	for i, member := range members {
+		cloned[i] = member.Clone()
+	}
+	return cloned
+}
+
 type Bet struct {
 	PoolID            *poolpb.PoolId
 	ID                *poolpb.BetId

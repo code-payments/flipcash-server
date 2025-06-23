@@ -3,18 +3,37 @@ package memory
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"sort"
 	"sync"
+
+	"google.golang.org/protobuf/proto"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
+	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/pool"
 )
 
+type MembersById []*pool.Member
+
+func (a MembersById) Len() int      { return len(a) }
+func (a MembersById) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a MembersById) Less(i, j int) bool {
+	id1 := binary.LittleEndian.Uint64(a[i].ID)
+	id2 := binary.LittleEndian.Uint64(a[j].ID)
+	return id1 < id2
+}
+
 type InMemoryStore struct {
-	mu    sync.RWMutex
-	pools []*pool.Pool
-	bets  []*pool.Bet
+	mu sync.RWMutex
+
+	nextMembershipIndex uint64
+
+	pools   []*pool.Pool
+	members []*pool.Member
+	bets    []*pool.Bet
 }
 
 func NewInMemory() pool.Store {
@@ -25,7 +44,10 @@ func (s *InMemoryStore) reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.nextMembershipIndex = 0
+
 	s.pools = nil
+	s.members = nil
 	s.bets = nil
 }
 
@@ -44,6 +66,7 @@ func (s *InMemoryStore) CreatePool(_ context.Context, newPool *pool.Pool) error 
 	}
 
 	s.pools = append(s.pools, newPool.Clone())
+	s.addMemberIfNotFound(newPool.CreatorID, newPool.ID)
 
 	return nil
 }
@@ -98,6 +121,7 @@ func (s *InMemoryStore) CreateBet(_ context.Context, newBet *pool.Bet) error {
 	}
 
 	s.bets = append(s.bets, newBet.Clone())
+	s.addMemberIfNotFound(newBet.UserID, newBet.PoolID)
 
 	return nil
 }
@@ -126,6 +150,43 @@ func (s *InMemoryStore) GetBetsByPool(_ context.Context, poolID *poolpb.PoolId) 
 	return pool.CloneBets(res), nil
 }
 
+func (s *InMemoryStore) GetPagedMembers(ctx context.Context, userID *commonpb.UserId, queryOptions ...database.QueryOption) ([]*pool.Member, error) {
+	appliedQueryOptions := database.ApplyQueryOptions(queryOptions...)
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	all := s.findMembersByUserID(userID)
+
+	var cloned []*pool.Member
+	for _, member := range all {
+		if appliedQueryOptions.PagingToken != nil && appliedQueryOptions.Order == commonpb.QueryOptions_ASC && compareMemberIds(member.ID, appliedQueryOptions.PagingToken.Value) <= 0 {
+			continue
+		}
+
+		if appliedQueryOptions.PagingToken != nil && appliedQueryOptions.Order == commonpb.QueryOptions_DESC && compareMemberIds(member.ID, appliedQueryOptions.PagingToken.Value) >= 0 {
+			continue
+		}
+
+		cloned = append(cloned, member.Clone())
+	}
+
+	sorted := MembersById(cloned)
+	if appliedQueryOptions.Order == commonpb.QueryOptions_DESC {
+		sort.Sort(sort.Reverse(sorted))
+	}
+
+	limited := sorted
+	if len(limited) > appliedQueryOptions.Limit {
+		limited = limited[:appliedQueryOptions.Limit]
+	}
+
+	if len(limited) == 0 {
+		return nil, pool.ErrMemberNotFound
+	}
+	return limited, nil
+}
+
 func (s *InMemoryStore) findPoolByID(poolID *poolpb.PoolId) *pool.Pool {
 	for _, pool := range s.pools {
 		if bytes.Equal(pool.ID.Value, poolID.Value) {
@@ -142,6 +203,48 @@ func (s *InMemoryStore) findPoolByFundingDestination(fundingDestination *commonp
 		}
 	}
 	return nil
+}
+
+func (s *InMemoryStore) findMember(userID *commonpb.UserId, poolID *poolpb.PoolId) *pool.Member {
+	for _, member := range s.members {
+		if !bytes.Equal(member.UserID.Value, userID.Value) {
+			continue
+		}
+
+		if !bytes.Equal(member.PoolID.Value, poolID.Value) {
+			continue
+		}
+
+		return member
+	}
+
+	return nil
+}
+
+func (s *InMemoryStore) findMembersByUserID(userID *commonpb.UserId) []*pool.Member {
+	var res []*pool.Member
+	for _, member := range s.members {
+		if bytes.Equal(member.UserID.Value, userID.Value) {
+			res = append(res, member)
+		}
+	}
+	return res
+}
+
+func (s *InMemoryStore) addMemberIfNotFound(userID *commonpb.UserId, poolID *poolpb.PoolId) {
+	existing := s.findMember(userID, poolID)
+	if existing != nil {
+		return
+	}
+
+	s.nextMembershipIndex++
+	member := &pool.Member{
+		ID:     make([]byte, 8),
+		UserID: proto.Clone(userID).(*commonpb.UserId),
+		PoolID: proto.Clone(poolID).(*poolpb.PoolId),
+	}
+	binary.LittleEndian.PutUint64(member.ID, s.nextMembershipIndex)
+	s.members = append(s.members, member)
 }
 
 func (s *InMemoryStore) findBetByID(betID *poolpb.BetId) *pool.Bet {
@@ -170,4 +273,16 @@ func (s *InMemoryStore) findBetsByPool(poolID *poolpb.PoolId) []*pool.Bet {
 		}
 	}
 	return res
+}
+
+func compareMemberIds(id1, id2 []byte) int {
+	int1 := binary.LittleEndian.Uint64(id1)
+	int2 := binary.LittleEndian.Uint64(id2)
+	if int1 == int2 {
+		return 0
+	}
+	if int1 < int2 {
+		return -1
+	}
+	return 1
 }

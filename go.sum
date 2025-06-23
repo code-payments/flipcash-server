@@ -45,8 +45,8 @@ github.com/code-payments/code-server v1.10.21-0.20250609150718-54647f50c66a h1:4
 github.com/code-payments/code-server v1.10.21-0.20250609150718-54647f50c66a/go.mod h1:ioFCKj/l/8ijXBf/cv+aalIbhSm4Nyiv9mDJASegDHM=
 github.com/code-payments/code-vm-indexer v0.1.11-0.20241028132209-23031e814fba h1:Bkp+gmeb6Y2PWXfkSCTMBGWkb2P1BujRDSjWeI+0j5I=
 github.com/code-payments/code-vm-indexer v0.1.11-0.20241028132209-23031e814fba/go.mod h1:jSiifpiBpyBQ8q2R0MGEbkSgWC6sbdRTyDBntmW+j1E=
-github.com/code-payments/flipcash-protobuf-api v1.4.7 h1:n+cZRovXRpYkN+GEjqgvipZ1AXSe4kc5EMVV3fC/N1k=
-github.com/code-payments/flipcash-protobuf-api v1.4.7/go.mod h1:YBz+vkbQN8PCxYcJVFePEGfOpIoR8zEsFx2Acrp9FyA=
+github.com/code-payments/flipcash-protobuf-api v1.4.8 h1:JboYhmc2TDOGeZeVyCd63RunnTXGeNX5YQfpM9p2aAM=
+github.com/code-payments/flipcash-protobuf-api v1.4.8/go.mod h1:YBz+vkbQN8PCxYcJVFePEGfOpIoR8zEsFx2Acrp9FyA=
 github.com/containerd/continuity v0.4.3 h1:6HVkalIp+2u1ZLH1J/pYX2oBVXlJZvh1X1A7bEZ9Su8=
 github.com/containerd/continuity v0.4.3/go.mod h1:F6PTNCKepoxEaXLQp3wDAjygEnImnZ/7o4JzpodfroQ=
 github.com/coreos/go-systemd v0.0.0-20190321100706-95778dfbb74e/go.mod h1:F5haX7vjVVG0kc13fIWeqUViNPyEJxv/OmvnBo0Yme4=

@@ -89,12 +89,12 @@ model PushToken {
 model Pool {
   // Fields
 
-  id                 String  @id
+  id                 String   @id
   creatorId          String
   name               String
   buyInCurrency      String
   buyInAmount        Float
-  fundingDestination String  @unique
+  fundingDestination String   @unique
   isOpen             Boolean
   resolution         Boolean?
   signature          String
@@ -128,4 +128,23 @@ model Bet {
 
   @@unique([poolId, userId])
   @@map("flipcash_bets")
+}
+
+model PoolMember {
+  // Fields
+
+  id     BigInt @id @default(autoincrement())
+  poolId String
+  userId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+
+  // Constraints
+
+  @@unique([userId, poolId])
+  @@index([userId, id(sort: Asc)])
+  @@map("flipcash_poolmembers")
 }

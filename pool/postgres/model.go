@@ -3,6 +3,9 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
+	"github.com/code-payments/flipcash-server/database"
 	pg "github.com/code-payments/flipcash-server/database/postgres"
 
 	"github.com/code-payments/flipcash-server/pool"
@@ -20,6 +24,10 @@ import (
 const (
 	poolsTableName = "flipcash_pools"
 	allPoolFields  = `"id", "creatorId", "name", "buyInCurrency", "buyInAmount", "fundingDestination", "isOpen", "resolution", "signature", "createdAt", "updatedAt"`
+
+	membersTableName         = "flipcash_poolmembers"
+	allMemberFields          = `"id", ` + allMemberFieldsWithoutId
+	allMemberFieldsWithoutId = `"poolId", "userId", "createdAt", "updatedAt"`
 
 	betsTableName = "flipcash_bets"
 	allBetFields  = `"id", "poolId", "userId", "selectedOutcome", "payoutDestination", "signature", "createdAt", "updatedAt"`
@@ -61,12 +69,12 @@ func toPoolModel(p *pool.Pool) *poolModel {
 }
 
 func fromPoolModel(m *poolModel) (*pool.Pool, error) {
-	decodedId, err := pg.Decode(m.ID)
+	decodedID, err := pg.Decode(m.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	decodedCreatorId, err := pg.Decode(m.CreatorID)
+	decodedCreatorID, err := pg.Decode(m.CreatorID)
 	if err != nil {
 		return nil, err
 	}
@@ -87,8 +95,8 @@ func fromPoolModel(m *poolModel) (*pool.Pool, error) {
 	}
 
 	return &pool.Pool{
-		ID:                 &poolpb.PoolId{Value: decodedId},
-		CreatorID:          &commonpb.UserId{Value: decodedCreatorId},
+		ID:                 &poolpb.PoolId{Value: decodedID},
+		CreatorID:          &commonpb.UserId{Value: decodedCreatorID},
 		Name:               m.Name,
 		BuyInCurrency:      m.BuyInCurrency,
 		BuyInAmount:        m.BuyInAmount,
@@ -97,6 +105,42 @@ func fromPoolModel(m *poolModel) (*pool.Pool, error) {
 		Resolution:         resolution,
 		Signature:          &commonpb.Signature{Value: decodedSignature},
 		CreatedAt:          m.CreatedAt,
+	}, nil
+}
+
+type memberModel struct {
+	ID        int64     `db:"id"`
+	UserID    string    `db:"userId"`
+	PoolID    string    `db:"poolId"`
+	CreatedAt time.Time `db:"createdAt"`
+	UpdatedAt time.Time `db:"updatedAt"`
+}
+
+func toMemberModel(userID *commonpb.UserId, poolID *poolpb.PoolId) *memberModel {
+	return &memberModel{
+		UserID: pg.Encode(userID.Value),
+		PoolID: pg.Encode(poolID.Value, pg.Base58),
+	}
+}
+
+func fromMemberModel(m *memberModel) (*pool.Member, error) {
+	id := make([]byte, 8)
+	binary.LittleEndian.PutUint64(id, uint64(m.ID))
+
+	decodedUserID, err := pg.Decode(m.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	decodedPoolID, err := pg.Decode(m.PoolID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pool.Member{
+		ID:     id,
+		UserID: &commonpb.UserId{Value: decodedUserID},
+		PoolID: &poolpb.PoolId{Value: decodedPoolID},
 	}, nil
 }
 
@@ -124,17 +168,17 @@ func toBetModel(b *pool.Bet) *betModel {
 }
 
 func fromBetModel(m *betModel) (*pool.Bet, error) {
-	decodedId, err := pg.Decode(m.ID)
+	decodedID, err := pg.Decode(m.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	decodedPoolId, err := pg.Decode(m.PoolID)
+	decodedPoolID, err := pg.Decode(m.PoolID)
 	if err != nil {
 		return nil, err
 	}
 
-	decodedUserId, err := pg.Decode(m.UserID)
+	decodedUserID, err := pg.Decode(m.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -150,9 +194,9 @@ func fromBetModel(m *betModel) (*pool.Bet, error) {
 	}
 
 	return &pool.Bet{
-		ID:                &poolpb.BetId{Value: decodedId},
-		PoolID:            &poolpb.PoolId{Value: decodedPoolId},
-		UserID:            &commonpb.UserId{Value: decodedUserId},
+		ID:                &poolpb.BetId{Value: decodedID},
+		PoolID:            &poolpb.PoolId{Value: decodedPoolID},
+		UserID:            &commonpb.UserId{Value: decodedUserID},
 		SelectedOutcome:   m.SelectedOutcome,
 		PayoutDestination: &commonpb.PublicKey{Value: decodedPayoutDestination},
 		Signature:         &commonpb.Signature{Value: decodedSignature},
@@ -190,6 +234,23 @@ func (m *poolModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 			return pool.ErrPoolIDExists
 		}
 		return err
+	})
+}
+
+func (m *memberModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
+	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
+		query := `INSERT INTO ` + membersTableName + `(` + allMemberFieldsWithoutId + `)
+			VALUES ($1, $2, NOW(), NOW())
+			ON CONFLICT DO NOTHING
+			RETURNING ` + allMemberFields
+		return pgxscan.Get(
+			ctx,
+			tx,
+			m,
+			query,
+			m.PoolID,
+			m.UserID,
+		)
 	})
 }
 
@@ -313,6 +374,59 @@ func dbGetBetsByPool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.
 	}
 	if len(res) == 0 {
 		return nil, pool.ErrBetNotFound
+	}
+	return res, nil
+}
+
+func dbGetPagedMembers(ctx context.Context, pgxPool *pgxpool.Pool, userID *commonpb.UserId, queryOptions ...database.QueryOption) ([]*memberModel, error) {
+	var res []*memberModel
+
+	appliedQueryptions := database.ApplyQueryOptions(queryOptions...)
+	queryParameters := []any{pg.Encode(userID.Value)}
+	query := `SELECT ` + allMemberFields + ` FROM ` + membersTableName +
+		` WHERE "userId" = $1`
+
+	if appliedQueryptions.PagingToken != nil {
+		if len(appliedQueryptions.PagingToken.Value) != 8 {
+			return nil, errors.New("invalid paging token")
+		}
+
+		integerPagingToken := binary.LittleEndian.Uint64(appliedQueryptions.PagingToken.Value)
+
+		queryParameters = append(queryParameters, integerPagingToken)
+		if appliedQueryptions.Order == commonpb.QueryOptions_ASC {
+			query += fmt.Sprintf(` AND "id" > $%d`, len(queryParameters))
+		} else {
+			query += fmt.Sprintf(` AND "id" < $%d`, len(queryParameters))
+		}
+	}
+
+	if appliedQueryptions.Order == commonpb.QueryOptions_ASC {
+		query += ` ORDER BY "id" ASC`
+	} else {
+		query += ` ORDER BY "id" DESC`
+	}
+
+	if appliedQueryptions.Limit > 0 {
+		queryParameters = append(queryParameters, appliedQueryptions.Limit)
+		query += fmt.Sprintf(` LIMIT $%d`, len(queryParameters))
+	}
+
+	err := pgxscan.Select(
+		ctx,
+		pgxPool,
+		&res,
+		query,
+		queryParameters...,
+	)
+	if err != nil {
+		if pgxscan.NotFound(err) {
+			return nil, pool.ErrMemberNotFound
+		}
+		return nil, err
+	}
+	if len(res) == 0 {
+		return nil, pool.ErrMemberNotFound
 	}
 	return res, nil
 }

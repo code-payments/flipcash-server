@@ -21,11 +21,13 @@ import (
 // todo: Add tests around more edge case result codes
 // todo: Add tests around signature verification
 // todo: Add tests around verified bet payments (when implemented)
+// todo: Add more test for paging APIs, but those are well covered in store tests
 
 func RunServerTests(t *testing.T, s pool.Store, teardown func()) {
 	for _, tf := range []func(t *testing.T, s pool.Store){
 		testServer_PoolManagement_HappyPath,
 		testServer_Betting_HappyPath,
+		testServer_Membership_HappyPath,
 	} {
 		tf(t, s)
 		teardown()
@@ -193,6 +195,76 @@ func testServer_Betting_HappyPath(t *testing.T, store pool.Store) {
 	require.NoError(t, err)
 	require.Equal(t, poolpb.GetPoolResponse_OK, getPoolResp.Result)
 	require.Len(t, getPoolResp.Pool.Bets, len(expectedBets))
+}
+
+func testServer_Membership_HappyPath(t *testing.T, store pool.Store) {
+	ctx := context.Background()
+	log := zaptest.NewLogger(t)
+
+	authz := auth.NewStaticAuthorizer()
+	server := pool.NewServer(log, authz, store)
+
+	rendezvousKey := model.MustGenerateKeyPair()
+	poolID := pool.ToPoolID(rendezvousKey)
+	expected := generateNewProtoPool(poolID)
+
+	creatorKey := model.MustGenerateKeyPair()
+	authz.Add(expected.Creator, creatorKey)
+
+	getPagedReq := &poolpb.GetPagedPoolsRequest{}
+	require.NoError(t, creatorKey.Auth(getPagedReq, &getPagedReq.Auth))
+
+	getPagedResp, err := server.GetPagedPools(ctx, getPagedReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.GetPagedPoolsResponse_NOT_FOUND, getPagedResp.Result)
+
+	createReq := &poolpb.CreatePoolRequest{
+		Pool: expected,
+	}
+	require.NoError(t, rendezvousKey.Sign(expected, &createReq.RendezvousSignature))
+	require.NoError(t, creatorKey.Auth(createReq, &createReq.Auth))
+
+	createResp, err := server.CreatePool(ctx, createReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.CreatePoolResponse_OK, createResp.Result)
+
+	getPagedResp, err = server.GetPagedPools(ctx, getPagedReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.GetPagedPoolsResponse_OK, getPagedResp.Result)
+	require.Len(t, getPagedResp.Pools, 1)
+	require.NoError(t, protoutil.ProtoEqualError(expected, getPagedResp.Pools[0].VerifiedMetadata))
+	require.NoError(t, protoutil.ProtoEqualError(createReq.RendezvousSignature, getPagedResp.Pools[0].RendezvousSignature))
+	require.NotNil(t, getPagedResp.Pools[0].PagingToken)
+
+	bet := generateNewProtoBet(true)
+	betterKey := model.MustGenerateKeyPair()
+	authz.Add(bet.UserId, betterKey)
+
+	getPagedReq = &poolpb.GetPagedPoolsRequest{}
+	require.NoError(t, betterKey.Auth(getPagedReq, &getPagedReq.Auth))
+
+	getPagedResp, err = server.GetPagedPools(ctx, getPagedReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.GetPagedPoolsResponse_NOT_FOUND, getPagedResp.Result)
+
+	makeBetReq := &poolpb.MakeBetRequest{
+		PoolId: poolID,
+		Bet:    bet,
+	}
+	require.NoError(t, rendezvousKey.Sign(bet, &makeBetReq.RendezvousSignature))
+	require.NoError(t, betterKey.Auth(makeBetReq, &makeBetReq.Auth))
+
+	makeBetResp, err := server.MakeBet(ctx, makeBetReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.MakeBetResponse_OK, makeBetResp.Result)
+
+	getPagedResp, err = server.GetPagedPools(ctx, getPagedReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.GetPagedPoolsResponse_OK, getPagedResp.Result)
+	require.Len(t, getPagedResp.Pools, 1)
+	require.NoError(t, protoutil.ProtoEqualError(expected, getPagedResp.Pools[0].VerifiedMetadata))
+	require.NoError(t, protoutil.ProtoEqualError(createReq.RendezvousSignature, getPagedResp.Pools[0].RendezvousSignature))
+	require.NotNil(t, getPagedResp.Pools[0].PagingToken)
 }
 
 func generateNewProtoPool(id *poolpb.PoolId) *poolpb.SignedPoolMetadata {

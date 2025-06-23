@@ -6,6 +6,7 @@ import (
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
+	"github.com/code-payments/flipcash-server/database"
 )
 
 var (
@@ -16,6 +17,7 @@ var (
 	ErrBetNotFound                  = errors.New("bet not found")
 	ErrBetExists                    = errors.New("bet already exists")
 	ErrMaxBetCountExceeded          = errors.New("max bet count exceeded")
+	ErrMemberNotFound               = errors.New("pool member not found")
 )
 
 type Store interface {
@@ -37,4 +39,8 @@ type Store interface {
 
 	// GetBetsByPool gets all bets for a given pool
 	GetBetsByPool(ctx context.Context, poolID *poolpb.PoolId) ([]*Bet, error)
+
+	// GetPagedMembers gets the set of pool memberships for the provided user
+	// over a paged API
+	GetPagedMembers(ctx context.Context, userID *commonpb.UserId, options ...database.QueryOption) ([]*Member, error)
 }

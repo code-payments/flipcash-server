@@ -8,6 +8,7 @@ import (
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
+	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/pool"
 )
 
@@ -22,7 +23,12 @@ func NewInPostgres(pgxPool *pgxpool.Pool) pool.Store {
 }
 
 func (s *store) CreatePool(ctx context.Context, pool *pool.Pool) error {
-	return toPoolModel(pool).dbPut(ctx, s.pgxPool)
+	err := toPoolModel(pool).dbPut(ctx, s.pgxPool)
+	if err != nil {
+		return err
+	}
+
+	return toMemberModel(pool.CreatorID, pool.ID).dbPut(ctx, s.pgxPool)
 }
 
 func (s *store) GetPoolByID(ctx context.Context, poolID *poolpb.PoolId) (*pool.Pool, error) {
@@ -38,7 +44,12 @@ func (s *store) ResolvePool(ctx context.Context, poolID *poolpb.PoolId, resoluti
 }
 
 func (s *store) CreateBet(ctx context.Context, bet *pool.Bet) error {
-	return toBetModel(bet).dbPut(ctx, s.pgxPool)
+	err := toBetModel(bet).dbPut(ctx, s.pgxPool)
+	if err != nil {
+		return err
+	}
+
+	return toMemberModel(bet.UserID, bet.PoolID).dbPut(ctx, s.pgxPool)
 }
 
 func (s *store) GetBetByUser(ctx context.Context, poolID *poolpb.PoolId, userID *commonpb.UserId) (*pool.Bet, error) {
@@ -58,6 +69,22 @@ func (s *store) GetBetsByPool(ctx context.Context, poolID *poolpb.PoolId) ([]*po
 	res := make([]*pool.Bet, len(models))
 	for i, model := range models {
 		res[i], err = fromBetModel(model)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (s *store) GetPagedMembers(ctx context.Context, userID *commonpb.UserId, queryOptions ...database.QueryOption) ([]*pool.Member, error) {
+	models, err := dbGetPagedMembers(ctx, s.pgxPool, userID, queryOptions...)
+	if err != nil {
+		return nil, err
+	}
+
+	res := make([]*pool.Member, len(models))
+	for i, model := range models {
+		res[i], err = fromMemberModel(model)
 		if err != nil {
 			return nil, err
 		}
