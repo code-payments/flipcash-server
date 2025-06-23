@@ -12,6 +12,7 @@ import (
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
+	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/model"
@@ -67,6 +68,20 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 		return nil, status.Error(codes.InvalidArgument, "pool.created_at is invalid")
 	} else if req.Pool.CreatedAt.AsTime().Before(time.Now().Add(-maxTsDelta)) {
 		return nil, status.Error(codes.InvalidArgument, "pool.created_at is invalid")
+	}
+
+	poolAccount, err := codecommon.NewAccountFromPublicKeyBytes(req.Pool.Id.Value)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "pool.id is not a valid public key")
+	}
+	timelockVault, err := poolAccount.ToTimelockVault(codecommon.CodeVmAccount, codecommon.CoreMintAccount)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure deriving timelock vault from pool id")
+		return nil, status.Error(codes.Internal, "failure deriving timelock vault from pool id")
+	}
+	// Importantly, ensure the private keys for the rendezvous and funds are different
+	if bytes.Equal(timelockVault.PublicKey().ToBytes(), req.Pool.FundingDestination.Value) {
+		return nil, status.Error(codes.InvalidArgument, "pool.id is the private key for pool.funding_destination")
 	}
 
 	model := ToPoolModel(req.Pool, req.RendezvousSignature)
