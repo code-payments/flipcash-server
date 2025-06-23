@@ -99,8 +99,9 @@ model Pool {
   resolution         Boolean?
   signature          String
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  closedAt  DateTime?
+  updatedAt DateTime  @updatedAt
 
   // Relations
 

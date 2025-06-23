@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"errors"
+	"time"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
@@ -13,6 +14,7 @@ var (
 	ErrPoolNotFound                 = errors.New("pool not found")
 	ErrPoolIDExists                 = errors.New("pool id already exists")
 	ErrPoolFundingDestinationExists = errors.New("pool funding address already exists")
+	ErrPoolOpen                     = errors.New("pool is open")
 	ErrPoolResolved                 = errors.New("pool is already resolved")
 	ErrBetNotFound                  = errors.New("bet not found")
 	ErrBetExists                    = errors.New("bet already exists")
@@ -27,8 +29,10 @@ type Store interface {
 	// GetPool gets a betting pool by ID
 	GetPoolByID(ctx context.Context, poolID *poolpb.PoolId) (*Pool, error)
 
-	// ResolvePool resolves a pool with an outcome. If the pool is open, its state
-	// is also closed.
+	// ClosePool closes a pool
+	ClosePool(ctx context.Context, poolID *poolpb.PoolId, closedAt time.Time, newSignature *commonpb.Signature) error
+
+	// ResolvePool resolves a pool with an outcome
 	ResolvePool(ctx context.Context, poolID *poolpb.PoolId, resolution bool, newSignature *commonpb.Signature) error
 
 	// CreateBet creates a new bet

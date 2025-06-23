@@ -23,7 +23,7 @@ import (
 
 const (
 	poolsTableName = "flipcash_pools"
-	allPoolFields  = `"id", "creatorId", "name", "buyInCurrency", "buyInAmount", "fundingDestination", "isOpen", "resolution", "signature", "createdAt", "updatedAt"`
+	allPoolFields  = `"id", "creatorId", "name", "buyInCurrency", "buyInAmount", "fundingDestination", "isOpen", "resolution", "signature", "createdAt", "closedAt", "updatedAt"`
 
 	membersTableName         = "flipcash_poolmembers"
 	allMemberFields          = `"id", ` + allMemberFieldsWithoutId
@@ -44,6 +44,7 @@ type poolModel struct {
 	Resolution         sql.NullBool `db:"resolution"`
 	Signature          string       `db:"signature"`
 	CreatedAt          time.Time    `db:"createdAt"`
+	ClosedAt           sql.NullTime `db:"closedAt"`
 	UpdatedAt          time.Time    `db:"updatedAt"`
 }
 
@@ -52,6 +53,12 @@ func toPoolModel(p *pool.Pool) *poolModel {
 	if p.Resolution != nil {
 		resolution.Valid = true
 		resolution.Bool = *p.Resolution
+	}
+
+	var closedAt sql.NullTime
+	if p.ClosedAt != nil {
+		closedAt.Valid = true
+		closedAt.Time = *p.ClosedAt
 	}
 
 	return &poolModel{
@@ -65,6 +72,7 @@ func toPoolModel(p *pool.Pool) *poolModel {
 		Resolution:         resolution,
 		Signature:          pg.Encode(p.Signature.Value, pg.Base58),
 		CreatedAt:          p.CreatedAt,
+		ClosedAt:           closedAt,
 	}
 }
 
@@ -94,6 +102,11 @@ func fromPoolModel(m *poolModel) (*pool.Pool, error) {
 		resolution = &m.Resolution.Bool
 	}
 
+	var closedAt *time.Time
+	if m.ClosedAt.Valid {
+		closedAt = &m.ClosedAt.Time
+	}
+
 	return &pool.Pool{
 		ID:                 &poolpb.PoolId{Value: decodedID},
 		CreatorID:          &commonpb.UserId{Value: decodedCreatorID},
@@ -105,6 +118,7 @@ func fromPoolModel(m *poolModel) (*pool.Pool, error) {
 		Resolution:         resolution,
 		Signature:          &commonpb.Signature{Value: decodedSignature},
 		CreatedAt:          m.CreatedAt,
+		ClosedAt:           closedAt,
 	}, nil
 }
 
@@ -207,7 +221,7 @@ func fromBetModel(m *betModel) (*pool.Bet, error) {
 func (m *poolModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
 		query := `INSERT INTO ` + poolsTableName + `(` + allPoolFields + `)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
 			RETURNING ` + allPoolFields
 		err := pgxscan.Get(
 			ctx,
@@ -224,6 +238,7 @@ func (m *poolModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 			m.Resolution,
 			m.Signature,
 			m.CreatedAt,
+			m.ClosedAt,
 		)
 		if err == nil {
 			return nil
@@ -304,11 +319,41 @@ func dbGetPoolByID(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.Po
 	return res, nil
 }
 
+func dbClosePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId, closedAt time.Time, newSignature *commonpb.Signature) error {
+	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
+		query := `UPDATE ` + poolsTableName + `
+			SET "isOpen" = FALSE, "closedAt" = $2, "signature" = $3, "updatedAt" = NOW()
+			WHERE "id" = $1 AND "isOpen" = TRUE AND "resolution" IS NULL`
+		cmd, err := tx.Exec(
+			ctx,
+			query,
+			pg.Encode(poolID.Value, pg.Base58),
+			closedAt,
+			pg.Encode(newSignature.Value, pg.Base58),
+		)
+		if err != nil {
+			return err
+		}
+		if cmd.RowsAffected() == 0 {
+			_, err := dbGetPoolByID(ctx, pgxPool, poolID)
+			switch err {
+			case nil:
+				return nil
+			case pool.ErrPoolNotFound:
+				return pool.ErrPoolNotFound
+			default:
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func dbResolvePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId, resolution bool, newSignature *commonpb.Signature) error {
 	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
 		query := `UPDATE ` + poolsTableName + `
-			SET "resolution" = $2, "signature" = $3, "isOpen" = FALSE, "updatedAt" = NOW()
-			WHERE "id" = $1 AND "resolution" IS NULL`
+			SET "resolution" = $2, "signature" = $3, "updatedAt" = NOW()
+			WHERE "id" = $1 AND "isOpen" = FALSE AND "resolution" IS NULL`
 		cmd, err := tx.Exec(
 			ctx,
 			query,
@@ -320,9 +365,12 @@ func dbResolvePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.Po
 			return err
 		}
 		if cmd.RowsAffected() == 0 {
-			_, err = dbGetPoolByID(ctx, pgxPool, poolID)
+			existing, err := dbGetPoolByID(ctx, pgxPool, poolID)
 			switch err {
 			case nil:
+				if existing.IsOpen {
+					return pool.ErrPoolOpen
+				}
 				return pool.ErrPoolResolved
 			case pool.ErrPoolNotFound:
 				return pool.ErrPoolNotFound

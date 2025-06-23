@@ -76,6 +76,25 @@ func testServer_PoolManagement_HappyPath(t *testing.T, store pool.Store) {
 	require.Empty(t, getResp.Pool.Bets)
 
 	expected.IsOpen = false
+	expected.ClosedAt = &timestamppb.Timestamp{Seconds: time.Now().Unix()}
+	closeReq := &poolpb.ClosePoolRequest{
+		Id:       poolID,
+		ClosedAt: expected.ClosedAt,
+	}
+	require.NoError(t, rendezvousKey.Sign(expected, &closeReq.NewRendezvousSignature))
+	require.NoError(t, creatorKey.Auth(closeReq, &closeReq.Auth))
+
+	closeResp, err := server.ClosePool(ctx, closeReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.ClosePoolResponse_OK, closeResp.Result)
+
+	getResp, err = server.GetPool(ctx, getReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.GetPoolResponse_OK, getResp.Result)
+	require.NoError(t, protoutil.ProtoEqualError(expected, getResp.Pool.VerifiedMetadata))
+	require.NoError(t, protoutil.ProtoEqualError(closeReq.NewRendezvousSignature, getResp.Pool.RendezvousSignature))
+	require.Empty(t, getResp.Pool.Bets)
+
 	expected.Resolution = &poolpb.Resolution{Kind: &poolpb.Resolution_BooleanResolution{
 		BooleanResolution: true,
 	}}
@@ -168,19 +187,17 @@ func testServer_Betting_HappyPath(t *testing.T, store pool.Store) {
 	}
 
 	protoPool.IsOpen = false
-	protoPool.Resolution = &poolpb.Resolution{Kind: &poolpb.Resolution_BooleanResolution{
-		BooleanResolution: true,
-	}}
-	resolveReq := &poolpb.ResolvePoolRequest{
-		Id:         poolID,
-		Resolution: protoPool.Resolution,
+	protoPool.ClosedAt = &timestamppb.Timestamp{Seconds: time.Now().Unix()}
+	closeReq := &poolpb.ClosePoolRequest{
+		Id:       poolID,
+		ClosedAt: protoPool.ClosedAt,
 	}
-	require.NoError(t, rendezvousKey.Sign(protoPool, &resolveReq.NewRendezvousSignature))
-	require.NoError(t, creatorKey.Auth(resolveReq, &resolveReq.Auth))
+	require.NoError(t, rendezvousKey.Sign(protoPool, &closeReq.NewRendezvousSignature))
+	require.NoError(t, creatorKey.Auth(closeReq, &closeReq.Auth))
 
-	resolveResp, err := server.ResolvePool(ctx, resolveReq)
+	closeResp, err := server.ClosePool(ctx, closeReq)
 	require.NoError(t, err)
-	require.Equal(t, poolpb.ResolvePoolResponse_OK, resolveResp.Result)
+	require.Equal(t, poolpb.ClosePoolResponse_OK, closeResp.Result)
 
 	makeBetReq := &poolpb.MakeBetRequest{
 		PoolId: poolID,

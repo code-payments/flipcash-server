@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -37,6 +38,10 @@ func (s *store) GetPoolByID(ctx context.Context, poolID *poolpb.PoolId) (*pool.P
 		return nil, err
 	}
 	return fromPoolModel(model)
+}
+
+func (s *store) ClosePool(ctx context.Context, poolID *poolpb.PoolId, closedAt time.Time, newSignature *commonpb.Signature) error {
+	return dbClosePool(ctx, s.pgxPool, poolID, closedAt, newSignature)
 }
 
 func (s *store) ResolvePool(ctx context.Context, poolID *poolpb.PoolId, resolution bool, newSignature *commonpb.Signature) error {

@@ -23,6 +23,7 @@ type Pool struct {
 	IsOpen             bool
 	Resolution         *bool
 	CreatedAt          time.Time
+	ClosedAt           *time.Time
 	Signature          *commonpb.Signature
 }
 
@@ -38,10 +39,17 @@ func ToPoolModel(proto *poolpb.SignedPoolMetadata, signature *commonpb.Signature
 		CreatedAt:          proto.CreatedAt.AsTime(),
 		Signature:          signature,
 	}
+
 	if proto.Resolution != nil {
 		resolution := proto.Resolution.GetBooleanResolution()
 		model.Resolution = &resolution
 	}
+
+	if proto.ClosedAt != nil {
+		closedAt := proto.ClosedAt.AsTime()
+		model.ClosedAt = &closedAt
+	}
+
 	return model
 }
 
@@ -61,6 +69,11 @@ func (p *Pool) Clone() *Pool {
 	if p.Resolution != nil {
 		value := *p.Resolution
 		cloned.Resolution = &value
+	}
+
+	if p.ClosedAt != nil {
+		value := *p.ClosedAt
+		cloned.ClosedAt = &value
 	}
 
 	return cloned
@@ -96,6 +109,9 @@ func (p *Pool) ToProto() *poolpb.PoolMetadata {
 				BooleanResolution: *p.Resolution,
 			},
 		}
+	}
+	if p.ClosedAt != nil {
+		proto.VerifiedMetadata.ClosedAt = timestamppb.New(*p.ClosedAt)
 	}
 	return proto
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"sort"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -83,6 +84,25 @@ func (s *InMemoryStore) GetPoolByID(_ context.Context, poolID *poolpb.PoolId) (*
 	return res.Clone(), nil
 }
 
+func (s *InMemoryStore) ClosePool(_ context.Context, poolID *poolpb.PoolId, closedAt time.Time, newSignature *commonpb.Signature) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item := s.findPoolByID(poolID)
+	if item == nil {
+		return pool.ErrPoolNotFound
+	}
+	if !item.IsOpen {
+		return nil
+	}
+
+	item.IsOpen = false
+	item.ClosedAt = &closedAt
+	item.Signature = newSignature
+
+	return nil
+}
+
 func (s *InMemoryStore) ResolvePool(_ context.Context, poolID *poolpb.PoolId, resolution bool, newSignature *commonpb.Signature) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -91,11 +111,13 @@ func (s *InMemoryStore) ResolvePool(_ context.Context, poolID *poolpb.PoolId, re
 	if item == nil {
 		return pool.ErrPoolNotFound
 	}
+	if item.IsOpen {
+		return pool.ErrPoolOpen
+	}
 	if item.Resolution != nil {
 		return pool.ErrPoolResolved
 	}
 
-	item.IsOpen = false
 	item.Resolution = &resolution
 	item.Signature = newSignature
 

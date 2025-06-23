@@ -117,55 +117,6 @@ func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*pool
 	return &poolpb.GetPoolResponse{Pool: protoPool}, nil
 }
 
-func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest) (*poolpb.ResolvePoolResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
-	if err != nil {
-		return nil, err
-	}
-
-	log := s.log.With(
-		zap.String("user_id", model.UserIDString(userID)),
-		zap.String("pool_id", PoolIDString(req.Id)),
-	)
-
-	pool, err := s.pools.GetPoolByID(ctx, req.Id)
-	switch err {
-	case nil:
-	case ErrPoolNotFound:
-		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_NOT_FOUND}, nil
-	default:
-		log.With(zap.Error(err)).Warn("Failure getting pool")
-		return nil, status.Error(codes.Internal, "failure getting pool")
-	}
-
-	if !bytes.Equal(userID.Value, pool.CreatorID.Value) {
-		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_DENIED}, nil
-	}
-	if pool.Resolution != nil {
-		if *pool.Resolution != req.Resolution.GetBooleanResolution() {
-			return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_DIFFERENT_OUTCOME_DECLARED}, nil
-		}
-		return &poolpb.ResolvePoolResponse{}, nil
-	}
-
-	verifiedProtoPool := pool.ToProto().VerifiedMetadata
-	verifiedProtoPool.IsOpen = false
-	verifiedProtoPool.Resolution = req.Resolution
-	if !VerifyPoolSignature(verifiedProtoPool, req.NewRendezvousSignature) {
-		return nil, status.Error(codes.PermissionDenied, "")
-	}
-
-	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
-		return s.pools.ResolvePool(ctx, req.Id, req.Resolution.GetBooleanResolution(), req.NewRendezvousSignature)
-	})
-	if err != nil {
-		log.With(zap.Error(err)).Warn("Failure persisting pool resolution")
-		return nil, status.Error(codes.Internal, "failure persisting pool resolution")
-	}
-
-	return &poolpb.ResolvePoolResponse{}, nil
-}
-
 func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsRequest) (*poolpb.GetPagedPoolsResponse, error) {
 	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
 	if err != nil {
@@ -203,6 +154,107 @@ func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsReq
 		protoPools[i] = protoPool
 	}
 	return &poolpb.GetPagedPoolsResponse{Pools: protoPools}, nil
+}
+
+func (s *Server) ClosePool(ctx context.Context, req *poolpb.ClosePoolRequest) (*poolpb.ClosePoolResponse, error) {
+	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	if err != nil {
+		return nil, err
+	}
+
+	log := s.log.With(
+		zap.String("user_id", model.UserIDString(userID)),
+		zap.String("pool_id", PoolIDString(req.Id)),
+	)
+
+	if req.ClosedAt.Nanos > 0 {
+		return nil, status.Error(codes.InvalidArgument, "pool.created_at.nanos cannot be set")
+	}
+
+	pool, err := s.pools.GetPoolByID(ctx, req.Id)
+	switch err {
+	case nil:
+	case ErrPoolNotFound:
+		return &poolpb.ClosePoolResponse{Result: poolpb.ClosePoolResponse_NOT_FOUND}, nil
+	default:
+		log.With(zap.Error(err)).Warn("Failure getting pool")
+		return nil, status.Error(codes.Internal, "failure getting pool")
+	}
+
+	if !bytes.Equal(userID.Value, pool.CreatorID.Value) {
+		return &poolpb.ClosePoolResponse{Result: poolpb.ClosePoolResponse_DENIED}, nil
+	}
+	if !pool.IsOpen {
+		return &poolpb.ClosePoolResponse{}, nil
+	}
+
+	verifiedProtoPool := pool.ToProto().VerifiedMetadata
+	verifiedProtoPool.IsOpen = false
+	verifiedProtoPool.ClosedAt = req.ClosedAt
+	if !VerifyPoolSignature(verifiedProtoPool, req.NewRendezvousSignature) {
+		return nil, status.Error(codes.PermissionDenied, "")
+	}
+
+	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
+		return s.pools.ClosePool(ctx, req.Id, req.ClosedAt.AsTime(), req.NewRendezvousSignature)
+	})
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure persisting pool closure")
+		return nil, status.Error(codes.Internal, "failure persisting pool closure")
+	}
+
+	return &poolpb.ClosePoolResponse{}, nil
+}
+
+func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest) (*poolpb.ResolvePoolResponse, error) {
+	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	if err != nil {
+		return nil, err
+	}
+
+	log := s.log.With(
+		zap.String("user_id", model.UserIDString(userID)),
+		zap.String("pool_id", PoolIDString(req.Id)),
+	)
+
+	pool, err := s.pools.GetPoolByID(ctx, req.Id)
+	switch err {
+	case nil:
+	case ErrPoolNotFound:
+		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_NOT_FOUND}, nil
+	default:
+		log.With(zap.Error(err)).Warn("Failure getting pool")
+		return nil, status.Error(codes.Internal, "failure getting pool")
+	}
+
+	if !bytes.Equal(userID.Value, pool.CreatorID.Value) {
+		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_DENIED}, nil
+	}
+	if pool.IsOpen {
+		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_POOL_OPEN}, nil
+	}
+	if pool.Resolution != nil {
+		if *pool.Resolution != req.Resolution.GetBooleanResolution() {
+			return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_DIFFERENT_OUTCOME_DECLARED}, nil
+		}
+		return &poolpb.ResolvePoolResponse{}, nil
+	}
+
+	verifiedProtoPool := pool.ToProto().VerifiedMetadata
+	verifiedProtoPool.Resolution = req.Resolution
+	if !VerifyPoolSignature(verifiedProtoPool, req.NewRendezvousSignature) {
+		return nil, status.Error(codes.PermissionDenied, "")
+	}
+
+	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
+		return s.pools.ResolvePool(ctx, req.Id, req.Resolution.GetBooleanResolution(), req.NewRendezvousSignature)
+	})
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure persisting pool resolution")
+		return nil, status.Error(codes.Internal, "failure persisting pool resolution")
+	}
+
+	return &poolpb.ResolvePoolResponse{}, nil
 }
 
 func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*poolpb.MakeBetResponse, error) {

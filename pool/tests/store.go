@@ -58,11 +58,25 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 
 	newSignature := &commonpb.Signature{Value: make([]byte, 64)}
 	rand.Read(expected.Signature.Value[:])
-	require.NoError(t, s.ResolvePool(ctx, poolID, true, newSignature))
+	require.Error(t, pool.ErrPoolOpen, s.ResolvePool(ctx, poolID, true, newSignature))
+
+	closedAt := time.Now().UTC().Truncate(time.Second)
+	newSignature = &commonpb.Signature{Value: make([]byte, 64)}
+	rand.Read(expected.Signature.Value[:])
+	require.Error(t, pool.ErrPoolOpen, s.ClosePool(ctx, poolID, closedAt, newSignature))
 
 	actual, err = s.GetPoolByID(ctx, poolID)
 	require.NoError(t, err)
 	require.False(t, actual.IsOpen)
+	require.Equal(t, closedAt, *actual.ClosedAt)
+	require.NoError(t, protoutil.ProtoEqualError(newSignature, actual.Signature))
+
+	newSignature = &commonpb.Signature{Value: make([]byte, 64)}
+	rand.Read(expected.Signature.Value[:])
+	require.Error(t, pool.ErrPoolOpen, s.ResolvePool(ctx, poolID, true, newSignature))
+
+	actual, err = s.GetPoolByID(ctx, poolID)
+	require.NoError(t, err)
 	require.Equal(t, true, *actual.Resolution)
 	require.NoError(t, protoutil.ProtoEqualError(newSignature, actual.Signature))
 
