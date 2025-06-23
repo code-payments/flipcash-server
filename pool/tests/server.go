@@ -12,6 +12,8 @@ import (
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
+	codedata "github.com/code-payments/code-server/pkg/code/data"
+	codetestutil "github.com/code-payments/code-server/pkg/testutil"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/model"
 	"github.com/code-payments/flipcash-server/pool"
@@ -40,6 +42,7 @@ func testServer_PoolManagement_HappyPath(t *testing.T, store pool.Store) {
 
 	authz := auth.NewStaticAuthorizer()
 	server := pool.NewServer(log, authz, store)
+	codetestutil.SetupRandomSubsidizer(t, codedata.NewTestDataProvider())
 
 	rendezvousKey := model.MustGenerateKeyPair()
 	poolID := pool.ToPoolID(rendezvousKey)
@@ -101,6 +104,7 @@ func testServer_Betting_HappyPath(t *testing.T, store pool.Store) {
 
 	authz := auth.NewStaticAuthorizer()
 	server := pool.NewServer(log, authz, store)
+	codetestutil.SetupRandomSubsidizer(t, codedata.NewTestDataProvider())
 
 	rendezvousKey := model.MustGenerateKeyPair()
 	poolID := pool.ToPoolID(rendezvousKey)
@@ -203,6 +207,7 @@ func testServer_Membership_HappyPath(t *testing.T, store pool.Store) {
 
 	authz := auth.NewStaticAuthorizer()
 	server := pool.NewServer(log, authz, store)
+	codetestutil.SetupRandomSubsidizer(t, codedata.NewTestDataProvider())
 
 	rendezvousKey := model.MustGenerateKeyPair()
 	poolID := pool.ToPoolID(rendezvousKey)
