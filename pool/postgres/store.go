@@ -44,7 +44,7 @@ func (s *store) ClosePool(ctx context.Context, poolID *poolpb.PoolId, closedAt t
 	return dbClosePool(ctx, s.pgxPool, poolID, closedAt, newSignature)
 }
 
-func (s *store) ResolvePool(ctx context.Context, poolID *poolpb.PoolId, resolution bool, newSignature *commonpb.Signature) error {
+func (s *store) ResolvePool(ctx context.Context, poolID *poolpb.PoolId, resolution pool.Resolution, newSignature *commonpb.Signature) error {
 	return dbResolvePool(ctx, s.pgxPool, poolID, resolution, newSignature)
 }
 

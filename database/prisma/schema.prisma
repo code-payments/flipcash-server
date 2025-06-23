@@ -89,14 +89,14 @@ model PushToken {
 model Pool {
   // Fields
 
-  id                 String   @id
+  id                 String  @id
   creatorId          String
   name               String
   buyInCurrency      String
   buyInAmount        Float
-  fundingDestination String   @unique
+  fundingDestination String  @unique
   isOpen             Boolean
-  resolution         Boolean?
+  resolution         Int     @default(0) @db.SmallInt
   signature          String
 
   createdAt DateTime  @default(now())

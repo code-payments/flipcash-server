@@ -212,9 +212,12 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 		return nil, err
 	}
 
+	resolution := ToResolution(req.Resolution)
+
 	log := s.log.With(
 		zap.String("user_id", model.UserIDString(userID)),
 		zap.String("pool_id", PoolIDString(req.Id)),
+		zap.String("resolution", resolution.String()),
 	)
 
 	pool, err := s.pools.GetPoolByID(ctx, req.Id)
@@ -233,8 +236,8 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 	if pool.IsOpen {
 		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_POOL_OPEN}, nil
 	}
-	if pool.Resolution != nil {
-		if *pool.Resolution != req.Resolution.GetBooleanResolution() {
+	if pool.Resolution != ResolutionUnknown {
+		if pool.Resolution != resolution {
 			return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_DIFFERENT_OUTCOME_DECLARED}, nil
 		}
 		return &poolpb.ResolvePoolResponse{}, nil
@@ -247,7 +250,7 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 	}
 
 	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
-		return s.pools.ResolvePool(ctx, req.Id, req.Resolution.GetBooleanResolution(), req.NewRendezvousSignature)
+		return s.pools.ResolvePool(ctx, req.Id, resolution, req.NewRendezvousSignature)
 	})
 	if err != nil {
 		log.With(zap.Error(err)).Warn("Failure persisting pool resolution")

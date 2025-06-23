@@ -41,7 +41,7 @@ type poolModel struct {
 	BuyInAmount        float64      `db:"buyInAmount"`
 	FundingDestination string       `db:"fundingDestination"`
 	IsOpen             bool         `db:"isOpen"`
-	Resolution         sql.NullBool `db:"resolution"`
+	Resolution         int          `db:"resolution"`
 	Signature          string       `db:"signature"`
 	CreatedAt          time.Time    `db:"createdAt"`
 	ClosedAt           sql.NullTime `db:"closedAt"`
@@ -49,12 +49,6 @@ type poolModel struct {
 }
 
 func toPoolModel(p *pool.Pool) *poolModel {
-	var resolution sql.NullBool
-	if p.Resolution != nil {
-		resolution.Valid = true
-		resolution.Bool = *p.Resolution
-	}
-
 	var closedAt sql.NullTime
 	if p.ClosedAt != nil {
 		closedAt.Valid = true
@@ -69,7 +63,7 @@ func toPoolModel(p *pool.Pool) *poolModel {
 		BuyInAmount:        p.BuyInAmount,
 		FundingDestination: pg.Encode(p.FundingDestination.Value, pg.Base58),
 		IsOpen:             p.IsOpen,
-		Resolution:         resolution,
+		Resolution:         int(p.Resolution),
 		Signature:          pg.Encode(p.Signature.Value, pg.Base58),
 		CreatedAt:          p.CreatedAt,
 		ClosedAt:           closedAt,
@@ -97,11 +91,6 @@ func fromPoolModel(m *poolModel) (*pool.Pool, error) {
 		return nil, err
 	}
 
-	var resolution *bool
-	if m.Resolution.Valid {
-		resolution = &m.Resolution.Bool
-	}
-
 	var closedAt *time.Time
 	if m.ClosedAt.Valid {
 		closedAt = &m.ClosedAt.Time
@@ -115,7 +104,7 @@ func fromPoolModel(m *poolModel) (*pool.Pool, error) {
 		BuyInAmount:        m.BuyInAmount,
 		FundingDestination: &commonpb.PublicKey{Value: decodedFundingDestination},
 		IsOpen:             m.IsOpen,
-		Resolution:         resolution,
+		Resolution:         pool.Resolution(m.Resolution),
 		Signature:          &commonpb.Signature{Value: decodedSignature},
 		CreatedAt:          m.CreatedAt,
 		ClosedAt:           closedAt,
@@ -323,13 +312,14 @@ func dbClosePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.Pool
 	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
 		query := `UPDATE ` + poolsTableName + `
 			SET "isOpen" = FALSE, "closedAt" = $2, "signature" = $3, "updatedAt" = NOW()
-			WHERE "id" = $1 AND "isOpen" = TRUE AND "resolution" IS NULL`
+			WHERE "id" = $1 AND "isOpen" = TRUE AND "resolution" = $4`
 		cmd, err := tx.Exec(
 			ctx,
 			query,
 			pg.Encode(poolID.Value, pg.Base58),
 			closedAt,
 			pg.Encode(newSignature.Value, pg.Base58),
+			pool.ResolutionUnknown,
 		)
 		if err != nil {
 			return err
@@ -349,17 +339,18 @@ func dbClosePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.Pool
 	})
 }
 
-func dbResolvePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId, resolution bool, newSignature *commonpb.Signature) error {
+func dbResolvePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId, resolution pool.Resolution, newSignature *commonpb.Signature) error {
 	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
 		query := `UPDATE ` + poolsTableName + `
 			SET "resolution" = $2, "signature" = $3, "updatedAt" = NOW()
-			WHERE "id" = $1 AND "isOpen" = FALSE AND "resolution" IS NULL`
+			WHERE "id" = $1 AND "isOpen" = FALSE AND "resolution" = $4`
 		cmd, err := tx.Exec(
 			ctx,
 			query,
 			pg.Encode(poolID.Value, pg.Base58),
 			resolution,
 			pg.Encode(newSignature.Value, pg.Base58),
+			pool.ResolutionUnknown,
 		)
 		if err != nil {
 			return err

@@ -10,7 +10,17 @@ import (
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
+
 	"github.com/code-payments/flipcash-server/model"
+)
+
+type Resolution int
+
+const (
+	ResolutionUnknown Resolution = iota
+	ResolutionRefunded
+	ResolutionYes
+	ResolutionNo
 )
 
 type Pool struct {
@@ -21,7 +31,7 @@ type Pool struct {
 	BuyInAmount        float64
 	FundingDestination *commonpb.PublicKey
 	IsOpen             bool
-	Resolution         *bool
+	Resolution         Resolution
 	CreatedAt          time.Time
 	ClosedAt           *time.Time
 	Signature          *commonpb.Signature
@@ -36,13 +46,9 @@ func ToPoolModel(proto *poolpb.SignedPoolMetadata, signature *commonpb.Signature
 		BuyInAmount:        proto.BuyIn.NativeAmount,
 		FundingDestination: proto.FundingDestination,
 		IsOpen:             proto.IsOpen,
+		Resolution:         ToResolution(proto.Resolution),
 		CreatedAt:          proto.CreatedAt.AsTime(),
 		Signature:          signature,
-	}
-
-	if proto.Resolution != nil {
-		resolution := proto.Resolution.GetBooleanResolution()
-		model.Resolution = &resolution
 	}
 
 	if proto.ClosedAt != nil {
@@ -62,13 +68,9 @@ func (p *Pool) Clone() *Pool {
 		BuyInAmount:        p.BuyInAmount,
 		FundingDestination: proto.Clone(p.FundingDestination).(*commonpb.PublicKey),
 		IsOpen:             p.IsOpen,
+		Resolution:         p.Resolution,
 		CreatedAt:          p.CreatedAt,
 		Signature:          proto.Clone(p.Signature).(*commonpb.Signature),
-	}
-
-	if p.Resolution != nil {
-		value := *p.Resolution
-		cloned.Resolution = &value
 	}
 
 	if p.ClosedAt != nil {
@@ -99,21 +101,63 @@ func (p *Pool) ToProto() *poolpb.PoolMetadata {
 			},
 			FundingDestination: p.FundingDestination,
 			IsOpen:             p.IsOpen,
+			Resolution:         p.Resolution.ToProto(),
 			CreatedAt:          timestamppb.New(p.CreatedAt),
 		},
 		RendezvousSignature: p.Signature,
-	}
-	if p.Resolution != nil {
-		proto.VerifiedMetadata.Resolution = &poolpb.Resolution{
-			Kind: &poolpb.Resolution_BooleanResolution{
-				BooleanResolution: *p.Resolution,
-			},
-		}
 	}
 	if p.ClosedAt != nil {
 		proto.VerifiedMetadata.ClosedAt = timestamppb.New(*p.ClosedAt)
 	}
 	return proto
+}
+
+func ToResolution(proto *poolpb.Resolution) Resolution {
+	if proto == nil {
+		return ResolutionUnknown
+	}
+
+	switch typed := proto.Kind.(type) {
+	case *poolpb.Resolution_RefundResolution:
+		return ResolutionRefunded
+	case *poolpb.Resolution_BooleanResolution:
+		if typed.BooleanResolution {
+			return ResolutionYes
+		}
+		return ResolutionNo
+
+	}
+
+	return ResolutionUnknown
+}
+
+func (r *Resolution) ToProto() *poolpb.Resolution {
+	if r == nil {
+		return nil
+	}
+
+	switch *r {
+	case ResolutionRefunded:
+		return &poolpb.Resolution{
+			Kind: &poolpb.Resolution_RefundResolution{
+				RefundResolution: &poolpb.Resolution_Refund{},
+			},
+		}
+	case ResolutionNo:
+		return &poolpb.Resolution{
+			Kind: &poolpb.Resolution_BooleanResolution{
+				BooleanResolution: false,
+			},
+		}
+	case ResolutionYes:
+		return &poolpb.Resolution{
+			Kind: &poolpb.Resolution_BooleanResolution{
+				BooleanResolution: true,
+			},
+		}
+	}
+
+	return nil
 }
 
 type Member struct {
@@ -235,4 +279,16 @@ func BetIDString(id *poolpb.BetId) string {
 		return "<nil>"
 	}
 	return base58.Encode(id.Value)
+}
+
+func (r Resolution) String() string {
+	switch r {
+	case ResolutionRefunded:
+		return "refunded"
+	case ResolutionYes:
+		return "yes"
+	case ResolutionNo:
+		return "no"
+	}
+	return "unknown"
 }

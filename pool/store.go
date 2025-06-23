@@ -33,7 +33,7 @@ type Store interface {
 	ClosePool(ctx context.Context, poolID *poolpb.PoolId, closedAt time.Time, newSignature *commonpb.Signature) error
 
 	// ResolvePool resolves a pool with an outcome
-	ResolvePool(ctx context.Context, poolID *poolpb.PoolId, resolution bool, newSignature *commonpb.Signature) error
+	ResolvePool(ctx context.Context, poolID *poolpb.PoolId, resolution Resolution, newSignature *commonpb.Signature) error
 
 	// CreateBet creates a new bet
 	CreateBet(ctx context.Context, bet *Bet) error

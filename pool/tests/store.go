@@ -45,7 +45,7 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 		BuyInAmount:        250.00,
 		FundingDestination: model.MustGenerateKeyPair().Proto(),
 		IsOpen:             true,
-		Resolution:         nil,
+		Resolution:         pool.ResolutionUnknown,
 		CreatedAt:          time.Now().UTC().Truncate(time.Second),
 		Signature:          &commonpb.Signature{Value: make([]byte, 64)},
 	}
@@ -58,7 +58,7 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 
 	newSignature := &commonpb.Signature{Value: make([]byte, 64)}
 	rand.Read(expected.Signature.Value[:])
-	require.Error(t, pool.ErrPoolOpen, s.ResolvePool(ctx, poolID, true, newSignature))
+	require.Error(t, pool.ErrPoolOpen, s.ResolvePool(ctx, poolID, pool.ResolutionYes, newSignature))
 
 	closedAt := time.Now().UTC().Truncate(time.Second)
 	newSignature = &commonpb.Signature{Value: make([]byte, 64)}
@@ -73,11 +73,11 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 
 	newSignature = &commonpb.Signature{Value: make([]byte, 64)}
 	rand.Read(expected.Signature.Value[:])
-	require.Error(t, pool.ErrPoolOpen, s.ResolvePool(ctx, poolID, true, newSignature))
+	require.Error(t, pool.ErrPoolOpen, s.ResolvePool(ctx, poolID, pool.ResolutionYes, newSignature))
 
 	actual, err = s.GetPoolByID(ctx, poolID)
 	require.NoError(t, err)
-	require.Equal(t, true, *actual.Resolution)
+	require.Equal(t, pool.ResolutionYes, actual.Resolution)
 	require.NoError(t, protoutil.ProtoEqualError(newSignature, actual.Signature))
 
 	require.Equal(t, pool.ErrPoolIDExists, s.CreatePool(ctx, expected))
@@ -178,7 +178,7 @@ func testPoolStore_MemberHappyPath(t *testing.T, s pool.Store) {
 			BuyInAmount:        250.00,
 			FundingDestination: model.MustGenerateKeyPair().Proto(),
 			IsOpen:             true,
-			Resolution:         nil,
+			Resolution:         pool.ResolutionUnknown,
 			CreatedAt:          time.Now().UTC().Truncate(time.Second),
 			Signature:          &commonpb.Signature{Value: make([]byte, 64)},
 		}

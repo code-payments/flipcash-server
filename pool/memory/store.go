@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -103,7 +104,11 @@ func (s *InMemoryStore) ClosePool(_ context.Context, poolID *poolpb.PoolId, clos
 	return nil
 }
 
-func (s *InMemoryStore) ResolvePool(_ context.Context, poolID *poolpb.PoolId, resolution bool, newSignature *commonpb.Signature) error {
+func (s *InMemoryStore) ResolvePool(_ context.Context, poolID *poolpb.PoolId, resolution pool.Resolution, newSignature *commonpb.Signature) error {
+	if resolution == pool.ResolutionUnknown {
+		return errors.New("resolution cannot be unknown")
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -114,11 +119,11 @@ func (s *InMemoryStore) ResolvePool(_ context.Context, poolID *poolpb.PoolId, re
 	if item.IsOpen {
 		return pool.ErrPoolOpen
 	}
-	if item.Resolution != nil {
+	if item.Resolution != pool.ResolutionUnknown {
 		return pool.ErrPoolResolved
 	}
 
-	item.Resolution = &resolution
+	item.Resolution = resolution
 	item.Signature = newSignature
 
 	return nil
