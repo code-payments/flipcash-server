@@ -247,7 +247,7 @@ func (m *memberModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 			VALUES ($1, $2, NOW(), NOW())
 			ON CONFLICT DO NOTHING
 			RETURNING ` + allMemberFields
-		return pgxscan.Get(
+		err := pgxscan.Get(
 			ctx,
 			tx,
 			m,
@@ -255,6 +255,10 @@ func (m *memberModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 			m.PoolID,
 			m.UserID,
 		)
+		if pgxscan.NotFound(err) {
+			return nil
+		}
+		return err
 	})
 }
 
