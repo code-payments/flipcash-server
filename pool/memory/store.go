@@ -133,7 +133,7 @@ func (s *InMemoryStore) CreateBet(_ context.Context, newBet *pool.Bet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if len(s.findBetsByPool(newBet.PoolID)) > pool.MaxParticipants {
+	if len(s.findBetsByPool(newBet.PoolID)) >= pool.MaxParticipants {
 		return pool.ErrMaxBetCountExceeded
 	}
 

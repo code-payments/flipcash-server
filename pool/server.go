@@ -106,7 +106,7 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*poolpb.GetPoolResponse, error) {
 	log := s.log.With(zap.String("pool_id", PoolIDString(req.Id)))
 
-	protoPool, err := s.getProtoPool(ctx, req.Id, true)
+	protoPool, err := s.getProtoPool(ctx, req.Id, !req.ExcludeBets)
 	if err == ErrPoolNotFound {
 		return &poolpb.GetPoolResponse{Result: poolpb.GetPoolResponse_NOT_FOUND}, nil
 	} else if err != nil {
@@ -363,15 +363,32 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, includeBet
 
 	protoPool := pool.ToProto()
 
-	if !includeBets {
-		return protoPool, nil
-	}
-
 	bets, err := s.pools.GetBetsByPool(ctx, id)
 	switch err {
 	case nil, ErrBetNotFound:
 	default:
 		return nil, err
+	}
+
+	var numYes, numNo int
+	for _, bet := range bets {
+		if bet.SelectedOutcome {
+			numYes++
+		} else {
+			numNo++
+		}
+	}
+	protoPool.BetSummary = &poolpb.BetSummary{
+		Kind: &poolpb.BetSummary_BooleanSummary{
+			BooleanSummary: &poolpb.BetSummary_BooleanBetSummary{
+				NumYes: uint32(numYes),
+				NumNo:  uint32(numNo),
+			},
+		},
+	}
+
+	if !includeBets {
+		return protoPool, nil
 	}
 
 	for _, bet := range bets {

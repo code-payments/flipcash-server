@@ -266,7 +266,7 @@ func (m *betModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
 		query := `INSERT INTO ` + betsTableName + `(` + allBetFields + `)
 			SELECT $1, $2, $3, $4, $5, $6, $7, NOW()
-			WHERE (SELECT COUNT(*) FROM ` + betsTableName + ` WHERE "poolId" = $2) <= $8
+			WHERE (SELECT COUNT(*) FROM ` + betsTableName + ` WHERE "poolId" = $2) < $8
 			RETURNING ` + allBetFields
 		err := pgxscan.Get(
 			ctx,

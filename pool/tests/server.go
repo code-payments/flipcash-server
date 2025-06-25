@@ -135,7 +135,7 @@ func testServer_Betting_HappyPath(t *testing.T, store pool.Store) {
 	var allBets []*poolpb.SignedBetMetadata
 	var betterKeys []model.KeyPair
 	for i := range 2 * pool.MaxParticipants {
-		bet := generateNewProtoBet(i%2 == 0)
+		bet := generateNewProtoBet(i%3 == 0)
 		allBets = append(allBets, bet)
 		betterKey := model.MustGenerateKeyPair()
 		authz.Add(bet.UserId, betterKey)
@@ -164,7 +164,7 @@ func testServer_Betting_HappyPath(t *testing.T, store pool.Store) {
 
 		makeBetResp, err := server.MakeBet(ctx, makeBetReq)
 		require.NoError(t, err)
-		if i > pool.MaxParticipants {
+		if i >= pool.MaxParticipants {
 			require.Equal(t, poolpb.MakeBetResponse_MAX_BETS_RECEIVED, makeBetResp.Result)
 			continue
 		}
@@ -185,6 +185,8 @@ func testServer_Betting_HappyPath(t *testing.T, store pool.Store) {
 		require.NoError(t, protoutil.ProtoEqualError(expectedBets[i], actual.VerifiedMetadata))
 		require.NoError(t, protoutil.ProtoEqualError(expectedBetSignatures[i], actual.RendezvousSignature))
 	}
+	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes, 34)
+	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo, 66)
 
 	protoPool.IsOpen = false
 	protoPool.ClosedAt = &timestamppb.Timestamp{Seconds: time.Now().Unix()}

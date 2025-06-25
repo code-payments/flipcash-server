@@ -119,7 +119,7 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 		rand.Read(expected.Signature.Value[:])
 
 		err = s.CreateBet(ctx, expected)
-		if i > pool.MaxParticipants {
+		if i >= pool.MaxParticipants {
 			require.Equal(t, pool.ErrMaxBetCountExceeded, err)
 
 			_, err = s.GetBetByUser(ctx, poolID, userID)
@@ -135,7 +135,7 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 		require.NoError(t, err)
 		assertEquivalentBets(t, expected, actual)
 
-		if i >= pool.MaxParticipants {
+		if i >= pool.MaxParticipants-1 {
 			continue
 		}
 
