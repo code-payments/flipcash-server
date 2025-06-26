@@ -13,6 +13,7 @@ import (
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
+	"github.com/code-payments/flipcash-server/account"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/model"
@@ -25,18 +26,20 @@ const (
 )
 
 type Server struct {
-	log   *zap.Logger
-	auth  auth.Authorizer
-	pools Store
+	log      *zap.Logger
+	auth     auth.Authorizer
+	accounts account.Store
+	pools    Store
 
 	poolpb.UnimplementedPoolServer
 }
 
-func NewServer(log *zap.Logger, auth auth.Authorizer, pools Store) *Server {
+func NewServer(log *zap.Logger, auth auth.Authorizer, accounts account.Store, pools Store) *Server {
 	return &Server{
-		log:   log,
-		auth:  auth,
-		pools: pools,
+		log:      log,
+		auth:     auth,
+		accounts: accounts,
+		pools:    pools,
 	}
 }
 
@@ -51,6 +54,15 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 		zap.String("user_id", model.UserIDString(userID)),
 		zap.String("pool_id", PoolIDString(req.Pool.Id)),
 	)
+
+	isRegistered, err := s.accounts.IsRegistered(ctx, userID)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure getting user registration status")
+		return nil, status.Error(codes.Internal, "failure getting user registration status")
+	}
+	if !isRegistered {
+		return nil, status.Error(codes.PermissionDenied, "")
+	}
 
 	if !VerifyPoolSignature(req.Pool, req.RendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")
@@ -125,6 +137,15 @@ func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsReq
 
 	log := s.log.With(zap.String("user_id", model.UserIDString(userID)))
 
+	isRegistered, err := s.accounts.IsRegistered(ctx, userID)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure getting user registration status")
+		return nil, status.Error(codes.Internal, "failure getting user registration status")
+	}
+	if !isRegistered {
+		return nil, status.Error(codes.PermissionDenied, "")
+	}
+
 	if req.QueryOptions != nil && req.QueryOptions.PageSize <= 0 {
 		req.QueryOptions.PageSize = defaultMaxPagedPools
 	}
@@ -166,6 +187,15 @@ func (s *Server) ClosePool(ctx context.Context, req *poolpb.ClosePoolRequest) (*
 		zap.String("user_id", model.UserIDString(userID)),
 		zap.String("pool_id", PoolIDString(req.Id)),
 	)
+
+	isRegistered, err := s.accounts.IsRegistered(ctx, userID)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure getting user registration status")
+		return nil, status.Error(codes.Internal, "failure getting user registration status")
+	}
+	if !isRegistered {
+		return nil, status.Error(codes.PermissionDenied, "")
+	}
 
 	if req.ClosedAt.Nanos > 0 {
 		return nil, status.Error(codes.InvalidArgument, "pool.created_at.nanos cannot be set")
@@ -220,6 +250,15 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 		zap.String("resolution", resolution.String()),
 	)
 
+	isRegistered, err := s.accounts.IsRegistered(ctx, userID)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure getting user registration status")
+		return nil, status.Error(codes.Internal, "failure getting user registration status")
+	}
+	if !isRegistered {
+		return nil, status.Error(codes.PermissionDenied, "")
+	}
+
 	pool, err := s.pools.GetPoolByID(ctx, req.Id)
 	switch err {
 	case nil:
@@ -271,6 +310,15 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 		zap.String("pool_id", PoolIDString(req.PoolId)),
 		zap.String("bet_id", BetIDString(req.Bet.BetId)),
 	)
+
+	isRegistered, err := s.accounts.IsRegistered(ctx, userID)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure getting user registration status")
+		return nil, status.Error(codes.Internal, "failure getting user registration status")
+	}
+	if !isRegistered {
+		return nil, status.Error(codes.PermissionDenied, "")
+	}
 
 	if !VerifyBetSignature(req.PoolId, req.Bet, req.RendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")

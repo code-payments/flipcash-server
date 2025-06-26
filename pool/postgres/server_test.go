@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	account "github.com/code-payments/flipcash-server/account/postgres"
 	pg "github.com/code-payments/flipcash-server/database/postgres"
 	"github.com/code-payments/flipcash-server/pool/tests"
 
@@ -22,9 +23,10 @@ func TestPool_PostgresServer(t *testing.T) {
 
 	pg.SetupGlobalPgxPool(pool)
 
+	accounts := account.NewInPostgres(pool)
 	testStore := NewInPostgres(pool)
 	teardown := func() {
 		testStore.(*store).reset()
 	}
-	tests.RunServerTests(t, testStore, teardown)
+	tests.RunServerTests(t, accounts, testStore, teardown)
 }
