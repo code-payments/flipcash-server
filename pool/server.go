@@ -299,57 +299,46 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 
 	model := ToBetModel(req.PoolId, req.Bet, req.RendezvousSignature)
 
+	existing, err := s.pools.GetBetByUser(ctx, model.PoolID, userID)
+	switch err {
+	case nil:
+		// User has already made a bet with a different ID
+		if !bytes.Equal(existing.ID.Value, model.ID.Value) {
+			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
+		}
+		if !bytes.Equal(existing.PayoutDestination.Value, model.PayoutDestination.Value) {
+			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
+		}
+
+		// User hasn't changed their selection, the RPC call is a no-op. Preserve
+		// the original bet metadata.
+		if existing.SelectedOutcome == model.SelectedOutcome {
+			return &poolpb.MakeBetResponse{}, nil
+		}
+
+		// todo: Check if this bet was paid for
+
+		err = s.pools.UpdateBetOutcome(ctx, model.ID, model.SelectedOutcome, model.Signature, model.Ts)
+		if err != nil {
+			log.With(zap.Error(err)).Warn("Failure updating bet outcome")
+			return nil, status.Error(codes.Internal, "failure updating bet outcome")
+		}
+	case ErrBetNotFound:
+	default:
+		log.With(zap.Error(err)).Warn("Failure getting existing bet")
+		return nil, status.Error(codes.Internal, "failure getting existing bet")
+	}
+
 	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
 		return s.pools.CreateBet(ctx, model)
 	})
 	switch err {
 	case nil:
-	case ErrBetExists:
-		existing, err := s.pools.GetBetByUser(ctx, req.PoolId, userID)
-		switch err {
-		case nil:
-			// User made a bet with a different ID for this pool
-			if !bytes.Equal(existing.ID.Value, req.Bet.BetId.Value) {
-				return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
-			}
-			// User made a bet with a different outcome for this pool
-			if existing.SelectedOutcome != req.Bet.SelectedOutcome.GetBooleanOutcome() {
-				return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
-			}
-
-			// We can proceed with an OK response, RPC call is a no-op for an existing bet
-		case ErrBetNotFound:
-			// Someone else made a bet with the same bet ID. This is unlikely to
-			// happen in practice.
-			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
-		default:
-			log.With(zap.Error(err)).Warn("Failure getting bet")
-			return nil, status.Error(codes.Internal, "failure getting bet")
-		}
 	case ErrMaxBetCountExceeded:
-		existing, err := s.pools.GetBetByUser(ctx, req.PoolId, userID)
-		switch err {
-		case nil:
-			// User made a bet with a different ID for this pool
-			if !bytes.Equal(existing.ID.Value, req.Bet.BetId.Value) {
-				return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
-			}
-			// User made a bet with a different outcome for this pool
-			if existing.SelectedOutcome != req.Bet.SelectedOutcome.GetBooleanOutcome() {
-				return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
-			}
-
-			// We can proceed with an OK response, RPC call is a no-op for an existing bet
-		case ErrBetNotFound:
-			// The user doesn't have a bet. We've reached the limit
-			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MAX_BETS_RECEIVED}, nil
-		default:
-			log.With(zap.Error(err)).Warn("Failure getting bet")
-			return nil, status.Error(codes.Internal, "failure getting bet")
-		}
+		return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MAX_BETS_RECEIVED}, nil
 	default:
-		log.With(zap.Error(err)).Warn("Failure persisting bet")
-		return nil, status.Error(codes.Internal, "failure persisting bet")
+		log.With(zap.Error(err)).Warn("Failure persisting new bet")
+		return nil, status.Error(codes.Internal, "failure persisting new bet")
 	}
 
 	return &poolpb.MakeBetResponse{}, nil
@@ -362,6 +351,7 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, includeBet
 	}
 
 	protoPool := pool.ToProto()
+	protoPool.IsFundingDestinationInitialized = true
 
 	bets, err := s.pools.GetBetsByPool(ctx, id)
 	switch err {
@@ -394,8 +384,8 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, includeBet
 	for _, bet := range bets {
 		// log := log.With(zap.String("bet_id", BetIDString(bet.ID)))
 
-		// todo: verify bet has been paid for
-
+		protoBet := bet.ToProto()
+		protoBet.IsIntentSubmitted = true // todo: verify bet has been paid for
 		protoPool.Bets = append(protoPool.Bets, bet.ToProto())
 	}
 

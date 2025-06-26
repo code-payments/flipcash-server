@@ -20,7 +20,7 @@ import (
 	"github.com/code-payments/flipcash-server/protoutil"
 )
 
-// todo: Add tests around more edge case result codes
+// todo: Add tests around more edge case result codes and flows
 // todo: Add tests around signature verification
 // todo: Add tests around verified bet payments (when implemented)
 // todo: Add more test for paging APIs, but those are well covered in store tests

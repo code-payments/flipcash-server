@@ -107,6 +107,8 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 		_, err = s.GetBetByUser(ctx, poolID, userID)
 		require.Equal(t, pool.ErrBetNotFound, err)
 
+		require.Equal(t, pool.ErrBetNotFound, s.UpdateBetOutcome(ctx, betID, true, &commonpb.Signature{}, time.Now()))
+
 		expected := &pool.Bet{
 			PoolID:            poolID,
 			ID:                betID,
@@ -148,6 +150,16 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 		cloned = expected.Clone()
 		cloned.UserID = model.MustGenerateUserID()
 		require.Equal(t, pool.ErrBetExists, s.CreateBet(ctx, cloned))
+
+		expected.SelectedOutcome = !expected.SelectedOutcome
+		expected.Ts = time.Now().UTC().Truncate(time.Second).Add(5 * time.Second)
+		rand.Read(expected.Signature.Value[:])
+
+		require.NoError(t, s.UpdateBetOutcome(ctx, expected.ID, expected.SelectedOutcome, expected.Signature, expected.Ts))
+
+		actual, err = s.GetBetByUser(ctx, poolID, userID)
+		require.NoError(t, err)
+		assertEquivalentBets(t, expected, actual)
 	}
 
 	allActual, err := s.GetBetsByPool(ctx, poolID)

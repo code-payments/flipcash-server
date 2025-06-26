@@ -38,6 +38,9 @@ type Store interface {
 	// CreateBet creates a new bet
 	CreateBet(ctx context.Context, bet *Bet) error
 
+	// UpdateBetOutcome updates an existing bet's outcome
+	UpdateBetOutcome(ctx context.Context, betId *poolpb.BetId, newOutcome bool, newSignature *commonpb.Signature, newTs time.Time) error
+
 	// GetBetByUser gets a bet for a pool made by a user
 	GetBetByUser(ctx context.Context, poolID *poolpb.PoolId, userID *commonpb.UserId) (*Bet, error)
 

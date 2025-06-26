@@ -377,6 +377,28 @@ func dbResolvePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.Po
 	})
 }
 
+func dbUpdateBetOutcome(ctx context.Context, pgxPool *pgxpool.Pool, betID *poolpb.BetId, newOutcome bool, newSignature *commonpb.Signature, newTs time.Time) error {
+	query := `UPDATE ` + betsTableName + `
+		SET  "selectedOutcome" = $2, "signature" = $3, "createdAt" = $4
+		WHERE "id" = $1`
+
+	cmd, err := pgxPool.Exec(
+		ctx,
+		query,
+		pg.Encode(betID.Value, pg.Base58),
+		newOutcome,
+		pg.Encode(newSignature.Value, pg.Base58),
+		newTs,
+	)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return pool.ErrBetNotFound
+	}
+	return nil
+}
+
 func dbGetBetByUser(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId, userID *commonpb.UserId) (*betModel, error) {
 	res := &betModel{}
 	query := `SELECT ` + allBetFields + ` FROM ` + betsTableName +

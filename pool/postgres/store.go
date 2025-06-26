@@ -57,6 +57,10 @@ func (s *store) CreateBet(ctx context.Context, bet *pool.Bet) error {
 	return toMemberModel(bet.UserID, bet.PoolID).dbPut(ctx, s.pgxPool)
 }
 
+func (s *store) UpdateBetOutcome(ctx context.Context, betId *poolpb.BetId, newOutcome bool, newSignature *commonpb.Signature, newTs time.Time) error {
+	return dbUpdateBetOutcome(ctx, s.pgxPool, betId, newOutcome, newSignature, newTs)
+}
+
 func (s *store) GetBetByUser(ctx context.Context, poolID *poolpb.PoolId, userID *commonpb.UserId) (*pool.Bet, error) {
 	model, err := dbGetBetByUser(ctx, s.pgxPool, poolID, userID)
 	if err != nil {

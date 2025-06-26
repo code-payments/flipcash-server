@@ -153,6 +153,22 @@ func (s *InMemoryStore) CreateBet(_ context.Context, newBet *pool.Bet) error {
 	return nil
 }
 
+func (s *InMemoryStore) UpdateBetOutcome(_ context.Context, betId *poolpb.BetId, newOutcome bool, newSignature *commonpb.Signature, newTs time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item := s.findBetByID(betId)
+	if item == nil {
+		return pool.ErrBetNotFound
+	}
+
+	item.SelectedOutcome = newOutcome
+	item.Signature = proto.Clone(newSignature).(*commonpb.Signature)
+	item.Ts = newTs
+
+	return nil
+}
+
 func (s *InMemoryStore) GetBetByUser(_ context.Context, poolID *poolpb.PoolId, userID *commonpb.UserId) (*pool.Bet, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
