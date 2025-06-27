@@ -2,9 +2,11 @@ package pool
 
 import (
 	"crypto/ed25519"
+	"encoding/base64"
 	"time"
 
 	"github.com/mr-tron/base58"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -243,20 +245,28 @@ func (b *Bet) ToProto() *poolpb.BetMetadata {
 	}
 }
 
-func VerifyPoolSignature(signedPool *poolpb.SignedPoolMetadata, signature *commonpb.Signature) bool {
+func VerifyPoolSignature(log *zap.Logger, signedPool *poolpb.SignedPoolMetadata, signature *commonpb.Signature) bool {
 	marshalled, err := proto.Marshal(signedPool)
 	if err != nil {
 		return false
 	}
-	return ed25519.Verify(signedPool.Id.Value, marshalled, signature.Value)
+	isVerified := ed25519.Verify(signedPool.Id.Value, marshalled, signature.Value)
+	if !isVerified {
+		log.With(zap.String("base64_value", base64.StdEncoding.EncodeToString(marshalled))).Info("pool signature verification failed")
+	}
+	return isVerified
 }
 
-func VerifyBetSignature(poolID *poolpb.PoolId, signedBet *poolpb.SignedBetMetadata, signature *commonpb.Signature) bool {
+func VerifyBetSignature(log *zap.Logger, poolID *poolpb.PoolId, signedBet *poolpb.SignedBetMetadata, signature *commonpb.Signature) bool {
 	marshalled, err := proto.Marshal(signedBet)
 	if err != nil {
 		return false
 	}
-	return ed25519.Verify(poolID.Value, marshalled, signature.Value)
+	isVerified := ed25519.Verify(poolID.Value, marshalled, signature.Value)
+	if !isVerified {
+		log.With(zap.String("base64_value", base64.StdEncoding.EncodeToString(marshalled))).Info("bet signature verification failed")
+	}
+	return isVerified
 }
 
 func ToPoolID(keyPair model.KeyPair) *poolpb.PoolId {

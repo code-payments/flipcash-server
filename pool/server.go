@@ -64,7 +64,7 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 
-	if !VerifyPoolSignature(req.Pool, req.RendezvousSignature) {
+	if !VerifyPoolSignature(log, req.Pool, req.RendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 	if !req.Pool.IsOpen {
@@ -198,7 +198,12 @@ func (s *Server) ClosePool(ctx context.Context, req *poolpb.ClosePoolRequest) (*
 	}
 
 	if req.ClosedAt.Nanos > 0 {
-		return nil, status.Error(codes.InvalidArgument, "pool.created_at.nanos cannot be set")
+		return nil, status.Error(codes.InvalidArgument, "closed_at.nanos cannot be set")
+	}
+	if req.ClosedAt.AsTime().After(time.Now().Add(maxTsDelta)) {
+		return nil, status.Error(codes.InvalidArgument, "closed_at is invalid")
+	} else if req.ClosedAt.AsTime().Before(time.Now().Add(-maxTsDelta)) {
+		return nil, status.Error(codes.InvalidArgument, "closed_at is invalid")
 	}
 
 	pool, err := s.pools.GetPoolByID(ctx, req.Id)
@@ -221,7 +226,7 @@ func (s *Server) ClosePool(ctx context.Context, req *poolpb.ClosePoolRequest) (*
 	verifiedProtoPool := pool.ToProto().VerifiedMetadata
 	verifiedProtoPool.IsOpen = false
 	verifiedProtoPool.ClosedAt = req.ClosedAt
-	if !VerifyPoolSignature(verifiedProtoPool, req.NewRendezvousSignature) {
+	if !VerifyPoolSignature(log, verifiedProtoPool, req.NewRendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 
@@ -284,7 +289,7 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 
 	verifiedProtoPool := pool.ToProto().VerifiedMetadata
 	verifiedProtoPool.Resolution = req.Resolution
-	if !VerifyPoolSignature(verifiedProtoPool, req.NewRendezvousSignature) {
+	if !VerifyPoolSignature(log, verifiedProtoPool, req.NewRendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 
@@ -320,7 +325,7 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 
-	if !VerifyBetSignature(req.PoolId, req.Bet, req.RendezvousSignature) {
+	if !VerifyBetSignature(log, req.PoolId, req.Bet, req.RendezvousSignature) {
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 	if req.Bet.Ts.Nanos > 0 {
