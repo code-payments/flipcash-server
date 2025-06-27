@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"testing"
@@ -37,6 +38,9 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 	_, err := s.GetPoolByID(ctx, poolID)
 	require.Equal(t, pool.ErrPoolNotFound, err)
 
+	_, err = s.GetPoolByFundingDestination(ctx, model.MustGenerateKeyPair().Proto())
+	require.Equal(t, pool.ErrPoolNotFound, err)
+
 	expected := &pool.Pool{
 		ID:                 poolID,
 		CreatorID:          creatorID,
@@ -53,6 +57,10 @@ func testPoolStore_PoolHappyPath(t *testing.T, s pool.Store) {
 	require.NoError(t, s.CreatePool(ctx, expected))
 
 	actual, err := s.GetPoolByID(ctx, poolID)
+	require.NoError(t, err)
+	assertEquivalentPools(t, expected, actual)
+
+	actual, err = s.GetPoolByFundingDestination(ctx, expected.FundingDestination)
 	require.NoError(t, err)
 	assertEquivalentPools(t, expected, actual)
 
@@ -104,10 +112,14 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 		betID := pool.ToBetID(model.MustGenerateKeyPair())
 		userID := model.MustGenerateUserID()
 
+		_, err = s.GetBetByID(ctx, betID)
+		require.Equal(t, pool.ErrBetNotFound, err)
+
 		_, err = s.GetBetByUser(ctx, poolID, userID)
 		require.Equal(t, pool.ErrBetNotFound, err)
 
 		require.Equal(t, pool.ErrBetNotFound, s.UpdateBetOutcome(ctx, betID, true, &commonpb.Signature{}, time.Now()))
+		require.Equal(t, pool.ErrBetNotFound, s.MarkBetAsPaid(ctx, betID))
 
 		expected := &pool.Bet{
 			PoolID:            poolID,
@@ -133,7 +145,11 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 
 		allExpected = append(allExpected, expected)
 
-		actual, err := s.GetBetByUser(ctx, poolID, userID)
+		actual, err := s.GetBetByID(ctx, betID)
+		require.NoError(t, err)
+		assertEquivalentBets(t, expected, actual)
+
+		actual, err = s.GetBetByUser(ctx, poolID, userID)
 		require.NoError(t, err)
 		assertEquivalentBets(t, expected, actual)
 
@@ -157,7 +173,14 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 
 		require.NoError(t, s.UpdateBetOutcome(ctx, expected.ID, expected.SelectedOutcome, expected.Signature, expected.Ts))
 
-		actual, err = s.GetBetByUser(ctx, poolID, userID)
+		actual, err = s.GetBetByID(ctx, betID)
+		require.NoError(t, err)
+		assertEquivalentBets(t, expected, actual)
+
+		expected.IsIntentSubmitted = true
+		require.NoError(t, s.MarkBetAsPaid(ctx, expected.ID))
+
+		actual, err = s.GetBetByID(ctx, betID)
 		require.NoError(t, err)
 		assertEquivalentBets(t, expected, actual)
 	}
@@ -165,8 +188,16 @@ func testPoolStore_BetHappyPath(t *testing.T, s pool.Store) {
 	allActual, err := s.GetBetsByPool(ctx, poolID)
 	require.NoError(t, err)
 	require.Len(t, allActual, len(allExpected))
-	for i, expected := range allExpected {
-		assertEquivalentBets(t, expected, allActual[i])
+	for _, expected := range allExpected {
+		var found *pool.Bet
+		for _, actual := range allActual {
+			if bytes.Equal(expected.ID.Value, actual.ID.Value) {
+				require.Nil(t, found)
+				found = actual
+			}
+		}
+		require.NotNil(t, found)
+		assertEquivalentBets(t, expected, found)
 	}
 }
 
@@ -277,6 +308,7 @@ func assertEquivalentBets(t *testing.T, obj1, obj2 *pool.Bet) {
 	require.NoError(t, protoutil.ProtoEqualError(obj1.ID, obj2.ID))
 	require.NoError(t, protoutil.ProtoEqualError(obj1.UserID, obj2.UserID))
 	require.Equal(t, obj1.SelectedOutcome, obj2.SelectedOutcome)
+	require.Equal(t, obj1.IsIntentSubmitted, obj2.IsIntentSubmitted)
 	require.NoError(t, protoutil.ProtoEqualError(obj1.PayoutDestination, obj2.PayoutDestination))
 	require.Equal(t, obj1.Ts.UTC(), obj2.Ts.UTC())
 	require.NoError(t, protoutil.ProtoEqualError(obj1.Signature, obj2.Signature))

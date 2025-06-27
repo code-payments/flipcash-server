@@ -73,18 +73,6 @@ func (s *InMemoryStore) CreatePool(_ context.Context, newPool *pool.Pool) error 
 	return nil
 }
 
-func (s *InMemoryStore) GetPoolByID(_ context.Context, poolID *poolpb.PoolId) (*pool.Pool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	res := s.findPoolByID(poolID)
-
-	if res == nil {
-		return nil, pool.ErrPoolNotFound
-	}
-	return res.Clone(), nil
-}
-
 func (s *InMemoryStore) ClosePool(_ context.Context, poolID *poolpb.PoolId, closedAt time.Time, newSignature *commonpb.Signature) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -129,6 +117,30 @@ func (s *InMemoryStore) ResolvePool(_ context.Context, poolID *poolpb.PoolId, re
 	return nil
 }
 
+func (s *InMemoryStore) GetPoolByID(_ context.Context, poolID *poolpb.PoolId) (*pool.Pool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	res := s.findPoolByID(poolID)
+
+	if res == nil {
+		return nil, pool.ErrPoolNotFound
+	}
+	return res.Clone(), nil
+}
+
+func (s *InMemoryStore) GetPoolByFundingDestination(_ context.Context, fundingDestination *commonpb.PublicKey) (*pool.Pool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	res := s.findPoolByFundingDestination(fundingDestination)
+
+	if res == nil {
+		return nil, pool.ErrPoolNotFound
+	}
+	return res.Clone(), nil
+}
+
 func (s *InMemoryStore) CreateBet(_ context.Context, newBet *pool.Bet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -167,6 +179,32 @@ func (s *InMemoryStore) UpdateBetOutcome(_ context.Context, betId *poolpb.BetId,
 	item.Ts = newTs
 
 	return nil
+}
+
+func (s *InMemoryStore) MarkBetAsPaid(ctx context.Context, betId *poolpb.BetId) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item := s.findBetByID(betId)
+	if item == nil {
+		return pool.ErrBetNotFound
+	}
+
+	item.IsIntentSubmitted = true
+
+	return nil
+}
+
+func (s *InMemoryStore) GetBetByID(_ context.Context, betID *poolpb.BetId) (*pool.Bet, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	res := s.findBetByID(betID)
+
+	if res == nil {
+		return nil, pool.ErrBetNotFound
+	}
+	return res.Clone(), nil
 }
 
 func (s *InMemoryStore) GetBetByUser(_ context.Context, poolID *poolpb.PoolId, userID *commonpb.UserId) (*pool.Bet, error) {

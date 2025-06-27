@@ -30,7 +30,7 @@ const (
 	allMemberFieldsWithoutId = `"poolId", "userId", "createdAt", "updatedAt"`
 
 	betsTableName = "flipcash_bets"
-	allBetFields  = `"id", "poolId", "userId", "selectedOutcome", "payoutDestination", "signature", "createdAt", "updatedAt"`
+	allBetFields  = `"id", "poolId", "userId", "selectedOutcome", "payoutDestination", "isIntentSubmitted", "signature", "createdAt", "updatedAt"`
 )
 
 type poolModel struct {
@@ -153,6 +153,7 @@ type betModel struct {
 	UserID            string    `db:"userId"`
 	SelectedOutcome   bool      `db:"selectedOutcome"`
 	PayoutDestination string    `db:"payoutDestination"`
+	IsIntentSubmitted bool      `db:"isIntentSubmitted"`
 	Signature         string    `db:"signature"`
 	CreatedAt         time.Time `db:"createdAt"`
 	UpdatedAt         time.Time `db:"updatedAt"`
@@ -165,6 +166,7 @@ func toBetModel(b *pool.Bet) *betModel {
 		UserID:            pg.Encode(b.UserID.Value),
 		SelectedOutcome:   b.SelectedOutcome,
 		PayoutDestination: pg.Encode(b.PayoutDestination.Value, pg.Base58),
+		IsIntentSubmitted: b.IsIntentSubmitted,
 		Signature:         pg.Encode(b.Signature.Value, pg.Base58),
 		CreatedAt:         b.Ts,
 	}
@@ -202,6 +204,7 @@ func fromBetModel(m *betModel) (*pool.Bet, error) {
 		UserID:            &commonpb.UserId{Value: decodedUserID},
 		SelectedOutcome:   m.SelectedOutcome,
 		PayoutDestination: &commonpb.PublicKey{Value: decodedPayoutDestination},
+		IsIntentSubmitted: m.IsIntentSubmitted,
 		Signature:         &commonpb.Signature{Value: decodedSignature},
 		Ts:                m.CreatedAt,
 	}, nil
@@ -265,8 +268,8 @@ func (m *memberModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 func (m *betModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
 		query := `INSERT INTO ` + betsTableName + `(` + allBetFields + `)
-			SELECT $1, $2, $3, $4, $5, $6, $7, NOW()
-			WHERE (SELECT COUNT(*) FROM ` + betsTableName + ` WHERE "poolId" = $2) < $8
+			SELECT $1, $2, $3, $4, $5, $6, $7, $8, NOW()
+			WHERE (SELECT COUNT(*) FROM ` + betsTableName + ` WHERE "poolId" = $2) < $9
 			RETURNING ` + allBetFields
 		err := pgxscan.Get(
 			ctx,
@@ -278,6 +281,7 @@ func (m *betModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 			m.UserID,
 			m.SelectedOutcome,
 			m.PayoutDestination,
+			m.IsIntentSubmitted,
 			m.Signature,
 			m.CreatedAt,
 			pool.MaxParticipants,
@@ -291,25 +295,6 @@ func (m *betModel) dbPut(ctx context.Context, pgxPool *pgxpool.Pool) error {
 		}
 		return err
 	})
-}
-
-func dbGetPoolByID(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId) (*poolModel, error) {
-	res := &poolModel{}
-	query := `SELECT ` + allPoolFields + ` FROM ` + poolsTableName + ` WHERE "id" = $1`
-	err := pgxscan.Get(
-		ctx,
-		pgxPool,
-		res,
-		query,
-		pg.Encode(poolID.Value, pg.Base58),
-	)
-	if err != nil {
-		if pgxscan.NotFound(err) {
-			return nil, pool.ErrPoolNotFound
-		}
-		return nil, err
-	}
-	return res, nil
 }
 
 func dbClosePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId, closedAt time.Time, newSignature *commonpb.Signature) error {
@@ -377,26 +362,107 @@ func dbResolvePool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.Po
 	})
 }
 
-func dbUpdateBetOutcome(ctx context.Context, pgxPool *pgxpool.Pool, betID *poolpb.BetId, newOutcome bool, newSignature *commonpb.Signature, newTs time.Time) error {
-	query := `UPDATE ` + betsTableName + `
-		SET  "selectedOutcome" = $2, "signature" = $3, "createdAt" = $4
-		WHERE "id" = $1`
-
-	cmd, err := pgxPool.Exec(
+func dbGetPoolByID(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId) (*poolModel, error) {
+	res := &poolModel{}
+	query := `SELECT ` + allPoolFields + ` FROM ` + poolsTableName + ` WHERE "id" = $1`
+	err := pgxscan.Get(
 		ctx,
+		pgxPool,
+		res,
 		query,
-		pg.Encode(betID.Value, pg.Base58),
-		newOutcome,
-		pg.Encode(newSignature.Value, pg.Base58),
-		newTs,
+		pg.Encode(poolID.Value, pg.Base58),
 	)
 	if err != nil {
-		return err
+		if pgxscan.NotFound(err) {
+			return nil, pool.ErrPoolNotFound
+		}
+		return nil, err
 	}
-	if cmd.RowsAffected() == 0 {
-		return pool.ErrBetNotFound
+	return res, nil
+}
+
+func dbGetPoolByFundingDestination(ctx context.Context, pgxPool *pgxpool.Pool, fundingDestination *commonpb.PublicKey) (*poolModel, error) {
+	res := &poolModel{}
+	query := `SELECT ` + allPoolFields + ` FROM ` + poolsTableName + ` WHERE "fundingDestination" = $1`
+	err := pgxscan.Get(
+		ctx,
+		pgxPool,
+		res,
+		query,
+		pg.Encode(fundingDestination.Value, pg.Base58),
+	)
+	if err != nil {
+		if pgxscan.NotFound(err) {
+			return nil, pool.ErrPoolNotFound
+		}
+		return nil, err
 	}
-	return nil
+	return res, nil
+}
+
+func dbUpdateBetOutcome(ctx context.Context, pgxPool *pgxpool.Pool, betID *poolpb.BetId, newOutcome bool, newSignature *commonpb.Signature, newTs time.Time) error {
+	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
+		query := `UPDATE ` + betsTableName + `
+			SET  "selectedOutcome" = $2, "signature" = $3, "createdAt" = $4
+			WHERE "id" = $1`
+
+		cmd, err := tx.Exec(
+			ctx,
+			query,
+			pg.Encode(betID.Value, pg.Base58),
+			newOutcome,
+			pg.Encode(newSignature.Value, pg.Base58),
+			newTs,
+		)
+		if err != nil {
+			return err
+		}
+		if cmd.RowsAffected() == 0 {
+			return pool.ErrBetNotFound
+		}
+		return nil
+	})
+}
+
+func dbMarkBetAsPaid(ctx context.Context, pgxPool *pgxpool.Pool, betID *poolpb.BetId) error {
+	return pg.ExecuteInTx(ctx, pgxPool, func(tx pgx.Tx) error {
+		query := `UPDATE ` + betsTableName + `
+			SET  "isIntentSubmitted" = TRUE
+			WHERE "id" = $1`
+
+		cmd, err := tx.Exec(
+			ctx,
+			query,
+			pg.Encode(betID.Value, pg.Base58),
+		)
+		if err != nil {
+			return err
+		}
+		if cmd.RowsAffected() == 0 {
+			return pool.ErrBetNotFound
+		}
+		return nil
+	})
+}
+
+func dbGetBetByID(ctx context.Context, pgxPool *pgxpool.Pool, betID *poolpb.BetId) (*betModel, error) {
+	res := &betModel{}
+	query := `SELECT ` + allBetFields + ` FROM ` + betsTableName +
+		` WHERE "id" = $1`
+	err := pgxscan.Get(
+		ctx,
+		pgxPool,
+		res,
+		query,
+		pg.Encode(betID.Value, pg.Base58),
+	)
+	if err != nil {
+		if pgxscan.NotFound(err) {
+			return nil, pool.ErrBetNotFound
+		}
+		return nil, err
+	}
+	return res, nil
 }
 
 func dbGetBetByUser(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId, userID *commonpb.UserId) (*betModel, error) {
