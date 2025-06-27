@@ -83,6 +83,8 @@ func testServer_PoolManagement_HappyPath(t *testing.T, accounts account.Store, p
 	require.NoError(t, protoutil.ProtoEqualError(expected, getResp.Pool.VerifiedMetadata))
 	require.NoError(t, protoutil.ProtoEqualError(createReq.RendezvousSignature, getResp.Pool.RendezvousSignature))
 	require.Empty(t, getResp.Pool.Bets)
+	require.True(t, getResp.Pool.IsFundingDestinationInitialized)
+	require.EqualValues(t, 0, getResp.Pool.DerivationIndex)
 
 	expected.IsOpen = false
 	expected.ClosedAt = &timestamppb.Timestamp{Seconds: time.Now().Unix()}
@@ -103,6 +105,8 @@ func testServer_PoolManagement_HappyPath(t *testing.T, accounts account.Store, p
 	require.NoError(t, protoutil.ProtoEqualError(expected, getResp.Pool.VerifiedMetadata))
 	require.NoError(t, protoutil.ProtoEqualError(closeReq.NewRendezvousSignature, getResp.Pool.RendezvousSignature))
 	require.Empty(t, getResp.Pool.Bets)
+	require.True(t, getResp.Pool.IsFundingDestinationInitialized)
+	require.EqualValues(t, 0, getResp.Pool.DerivationIndex)
 
 	expected.Resolution = &poolpb.Resolution{Kind: &poolpb.Resolution_BooleanResolution{
 		BooleanResolution: true,
@@ -124,6 +128,8 @@ func testServer_PoolManagement_HappyPath(t *testing.T, accounts account.Store, p
 	require.NoError(t, protoutil.ProtoEqualError(expected, getResp.Pool.VerifiedMetadata))
 	require.NoError(t, protoutil.ProtoEqualError(resolveReq.NewRendezvousSignature, getResp.Pool.RendezvousSignature))
 	require.Empty(t, getResp.Pool.Bets)
+	require.True(t, getResp.Pool.IsFundingDestinationInitialized)
+	require.EqualValues(t, 0, getResp.Pool.DerivationIndex)
 }
 
 func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools pool.Store) {
@@ -184,8 +190,6 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 		}
 		require.Equal(t, poolpb.MakeBetResponse_OK, makeBetResp.Result)
 
-		simulateBetPayment(t, codeData, protoPool, bet)
-
 		expectedBets = append(expectedBets, bet)
 		expectedBetSignatures = append(expectedBetSignatures, makeBetReq.RendezvousSignature)
 	}
@@ -200,6 +204,26 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 	for i, actual := range getPoolResp.Pool.Bets {
 		require.NoError(t, protoutil.ProtoEqualError(expectedBets[i], actual.VerifiedMetadata))
 		require.NoError(t, protoutil.ProtoEqualError(expectedBetSignatures[i], actual.RendezvousSignature))
+		require.False(t, actual.IsIntentSubmitted)
+	}
+	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes, 0)
+	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo, 0)
+
+	for _, bet := range expectedBets {
+		simulateBetPayment(t, codeData, protoPool, bet)
+	}
+
+	getReq = &poolpb.GetPoolRequest{
+		Id: poolID,
+	}
+	getPoolResp, err = server.GetPool(ctx, getReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.GetPoolResponse_OK, getPoolResp.Result)
+	require.Len(t, getPoolResp.Pool.Bets, len(expectedBets))
+	for i, actual := range getPoolResp.Pool.Bets {
+		require.NoError(t, protoutil.ProtoEqualError(expectedBets[i], actual.VerifiedMetadata))
+		require.NoError(t, protoutil.ProtoEqualError(expectedBetSignatures[i], actual.RendezvousSignature))
+		require.True(t, actual.IsIntentSubmitted)
 	}
 	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes, 34)
 	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo, 66)
@@ -279,6 +303,8 @@ func testServer_Membership_HappyPath(t *testing.T, accounts account.Store, pools
 	require.NoError(t, protoutil.ProtoEqualError(expected, getPagedResp.Pools[0].VerifiedMetadata))
 	require.NoError(t, protoutil.ProtoEqualError(createReq.RendezvousSignature, getPagedResp.Pools[0].RendezvousSignature))
 	require.NotNil(t, getPagedResp.Pools[0].PagingToken)
+	require.True(t, getPagedResp.Pools[0].IsFundingDestinationInitialized)
+	require.EqualValues(t, 42, getPagedResp.Pools[0].DerivationIndex)
 
 	bet := generateNewProtoBet(true)
 	betterKey := model.MustGenerateKeyPair()
@@ -311,6 +337,8 @@ func testServer_Membership_HappyPath(t *testing.T, accounts account.Store, pools
 	require.NoError(t, protoutil.ProtoEqualError(expected, getPagedResp.Pools[0].VerifiedMetadata))
 	require.NoError(t, protoutil.ProtoEqualError(createReq.RendezvousSignature, getPagedResp.Pools[0].RendezvousSignature))
 	require.NotNil(t, getPagedResp.Pools[0].PagingToken)
+	require.True(t, getPagedResp.Pools[0].IsFundingDestinationInitialized)
+	require.EqualValues(t, 0, getPagedResp.Pools[0].DerivationIndex)
 }
 
 func generateNewProtoPool(id *poolpb.PoolId) *poolpb.SignedPoolMetadata {
@@ -350,6 +378,7 @@ func setupPoolAccountOnCode(t *testing.T, codeData codedata.Provider, ownerAccou
 		TokenAccount:     base58.Encode(tokenAccount.Value),
 		MintAccount:      codecommon.CoreMintAccount.PublicKey().ToBase58(),
 		AccountType:      codecommonpb.AccountType_POOL,
+		Index:            42,
 	}
 	require.NoError(t, codeData.CreateAccountInfo(context.Background(), accountInfoRecord))
 }

@@ -525,7 +525,7 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, requesting
 		protoPool.Bets = protoBets
 	}
 
-	if requestingUser != nil {
+	if requestingUser != nil && bytes.Equal(requestingUser.Value, protoPool.VerifiedMetadata.Creator.Value) {
 		fundingDestinationAccount, err := codecommon.NewAccountFromPublicKeyBytes(pool.FundingDestination.Value)
 		if err != nil {
 			return nil, err
