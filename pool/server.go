@@ -146,8 +146,14 @@ func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsReq
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 
-	if req.QueryOptions != nil && req.QueryOptions.PageSize <= 0 {
-		req.QueryOptions.PageSize = defaultMaxPagedPools
+	if req.QueryOptions != nil {
+		if req.QueryOptions.PageSize <= 0 {
+			req.QueryOptions.PageSize = defaultMaxPagedPools
+		}
+
+		if req.QueryOptions.PagingToken != nil && len(req.QueryOptions.PagingToken.Value) != 8 {
+			return nil, status.Error(codes.InvalidArgument, "query_ptions.paging_token.value length must be 8")
+		}
 	}
 
 	memberships, err := s.pools.GetPagedMembers(ctx, userID, database.FromProtoQueryOptions(req.QueryOptions)...)
