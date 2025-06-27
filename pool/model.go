@@ -2,10 +2,11 @@ package pool
 
 import (
 	"context"
-	"crypto/ed25519"
+	"encoding/base64"
 	"time"
 
 	"github.com/mr-tron/base58"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -15,7 +16,12 @@ import (
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
 	codeintent "github.com/code-payments/code-server/pkg/code/data/intent"
+	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/model"
+)
+
+var (
+	verifiedMetadataAuthn = auth.NewKeyPairAuthenticator()
 )
 
 type Resolution int
@@ -302,20 +308,40 @@ func (b *Bet) ToProto() *poolpb.BetMetadata {
 	}
 }
 
-func VerifyPoolSignature(signedPool *poolpb.SignedPoolMetadata, signature *commonpb.Signature) bool {
-	marshalled, err := proto.Marshal(signedPool)
-	if err != nil {
-		return false
+func VerifyPoolSignature(log *zap.Logger, signedPool *poolpb.SignedPoolMetadata, signature *commonpb.Signature) bool {
+	isVerified := verifySignedMetadata(signedPool.Id, signedPool, signature)
+	if !isVerified {
+		marshalled, err := proto.Marshal(signedPool)
+		if err != nil {
+			return false
+		}
+		log.With(zap.String("base64_value", base64.StdEncoding.EncodeToString(marshalled))).Info("pool signature verification failed")
 	}
-	return ed25519.Verify(signedPool.Id.Value, marshalled, signature.Value)
+	return isVerified
 }
 
-func VerifyBetSignature(poolID *poolpb.PoolId, signedBet *poolpb.SignedBetMetadata, signature *commonpb.Signature) bool {
-	marshalled, err := proto.Marshal(signedBet)
-	if err != nil {
-		return false
+func VerifyBetSignature(log *zap.Logger, poolID *poolpb.PoolId, signedBet *poolpb.SignedBetMetadata, signature *commonpb.Signature) bool {
+	isVerified := verifySignedMetadata(poolID, signedBet, signature)
+	if !isVerified {
+		marshalled, err := proto.Marshal(signedBet)
+		if err != nil {
+			return false
+		}
+		log.With(zap.String("base64_value", base64.StdEncoding.EncodeToString(marshalled))).Info("bet signature verification failed")
 	}
-	return ed25519.Verify(poolID.Value, marshalled, signature.Value)
+	return isVerified
+}
+
+func verifySignedMetadata(poolID *poolpb.PoolId, msg proto.Message, signature *commonpb.Signature) bool {
+	err := verifiedMetadataAuthn.Verify(context.Background(), msg, &commonpb.Auth{
+		Kind: &commonpb.Auth_KeyPair_{
+			KeyPair: &commonpb.Auth_KeyPair{
+				PubKey:    &commonpb.PublicKey{Value: poolID.Value},
+				Signature: signature,
+			},
+		},
+	})
+	return err == nil
 }
 
 func ToPoolID(keyPair model.KeyPair) *poolpb.PoolId {
