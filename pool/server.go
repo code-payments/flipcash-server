@@ -9,10 +9,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	codecommonpb "github.com/code-payments/code-protobuf-api/generated/go/common/v1"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
+	codedata "github.com/code-payments/code-server/pkg/code/data"
+	codeaccount "github.com/code-payments/code-server/pkg/code/data/account"
 	"github.com/code-payments/flipcash-server/account"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/database"
@@ -30,16 +33,18 @@ type Server struct {
 	auth     auth.Authorizer
 	accounts account.Store
 	pools    Store
+	codeData codedata.Provider
 
 	poolpb.UnimplementedPoolServer
 }
 
-func NewServer(log *zap.Logger, auth auth.Authorizer, accounts account.Store, pools Store) *Server {
+func NewServer(log *zap.Logger, auth auth.Authorizer, accounts account.Store, pools Store, codeData codedata.Provider) *Server {
 	return &Server{
 		log:      log,
 		auth:     auth,
 		accounts: accounts,
 		pools:    pools,
+		codeData: codeData,
 	}
 }
 
@@ -82,18 +87,12 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 		return nil, status.Error(codes.InvalidArgument, "pool.created_at is invalid")
 	}
 
-	poolAccount, err := codecommon.NewAccountFromPublicKeyBytes(req.Pool.Id.Value)
+	isValid, reason, err := s.validatePoolFundingDestination(ctx, req.Auth.GetKeyPair().PubKey, req.Pool.Id, req.Pool.FundingDestination)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "pool.id is not a valid public key")
-	}
-	timelockVault, err := poolAccount.ToTimelockVault(codecommon.CodeVmAccount, codecommon.CoreMintAccount)
-	if err != nil {
-		log.With(zap.Error(err)).Warn("Failure deriving timelock vault from pool id")
-		return nil, status.Error(codes.Internal, "failure deriving timelock vault from pool id")
-	}
-	// Importantly, ensure the private keys for the rendezvous and funds are different
-	if bytes.Equal(timelockVault.PublicKey().ToBytes(), req.Pool.FundingDestination.Value) {
-		return nil, status.Error(codes.InvalidArgument, "pool.id is the private key for pool.funding_destination")
+		log.With(zap.Error(err)).Warn("Failure validating funding destination")
+		return nil, status.Error(codes.Internal, "failure validating funding destination")
+	} else if !isValid {
+		return nil, status.Error(codes.InvalidArgument, reason)
 	}
 
 	model := ToPoolModel(req.Pool, req.RendezvousSignature)
@@ -115,10 +114,49 @@ func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) 
 	return &poolpb.CreatePoolResponse{}, nil
 }
 
+func (s *Server) validatePoolFundingDestination(ctx context.Context, owner *commonpb.PublicKey, poolId *poolpb.PoolId, fundingDestination *commonpb.PublicKey) (bool, string, error) {
+	poolAccount, err := codecommon.NewAccountFromPublicKeyBytes(poolId.Value)
+	if err != nil {
+		return false, "", err
+	}
+
+	ownerAccount, err := codecommon.NewAccountFromPublicKeyBytes(owner.Value)
+	if err != nil {
+		return false, "", err
+	}
+
+	fundingDestinationAccount, err := codecommon.NewAccountFromPublicKeyBytes(fundingDestination.Value)
+	if err != nil {
+		return false, "", err
+	}
+
+	timelockVault, err := poolAccount.ToTimelockVault(codecommon.CodeVmAccount, codecommon.CoreMintAccount)
+	if err != nil {
+		return false, "", err
+	}
+	if bytes.Equal(timelockVault.PublicKey().ToBytes(), fundingDestination.Value) {
+		return false, "pool.id is the private key for funding_destination", err
+	}
+
+	accountInfoRecord, err := s.codeData.GetAccountInfoByTokenAddress(ctx, fundingDestinationAccount.PublicKey().ToBase58())
+	switch err {
+	case nil, codeaccount.ErrAccountInfoNotFound:
+		if accountInfoRecord == nil || accountInfoRecord.AccountType != codecommonpb.AccountType_POOL {
+			return false, "pool.funding_destination is not a code pool account", nil
+		}
+		if accountInfoRecord.OwnerAccount != ownerAccount.PublicKey().ToBase58() {
+			return false, "pool.funding_destination is not your code pool account", nil
+		}
+		return true, "", nil
+	default:
+		return false, "", err
+	}
+}
+
 func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*poolpb.GetPoolResponse, error) {
 	log := s.log.With(zap.String("pool_id", PoolIDString(req.Id)))
 
-	protoPool, err := s.getProtoPool(ctx, req.Id, !req.ExcludeBets)
+	protoPool, err := s.getProtoPool(ctx, req.Id, nil, !req.ExcludeBets)
 	if err == ErrPoolNotFound {
 		return &poolpb.GetPoolResponse{Result: poolpb.GetPoolResponse_NOT_FOUND}, nil
 	} else if err != nil {
@@ -165,7 +203,7 @@ func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsReq
 	for i, membership := range memberships {
 		log := log.With(zap.String("pool_id", PoolIDString(membership.PoolID)))
 
-		protoPool, err := s.getProtoPool(ctx, membership.PoolID, true)
+		protoPool, err := s.getProtoPool(ctx, membership.PoolID, userID, true)
 		if err != nil {
 			log.With(zap.Error(err)).Warn("Failure getting pool with bets")
 			return nil, status.Error(codes.Internal, "failure getting pool with bets")
@@ -198,7 +236,12 @@ func (s *Server) ClosePool(ctx context.Context, req *poolpb.ClosePoolRequest) (*
 	}
 
 	if req.ClosedAt.Nanos > 0 {
-		return nil, status.Error(codes.InvalidArgument, "pool.created_at.nanos cannot be set")
+		return nil, status.Error(codes.InvalidArgument, "closed_at.nanos cannot be set")
+	}
+	if req.ClosedAt.AsTime().After(time.Now().Add(maxTsDelta)) {
+		return nil, status.Error(codes.InvalidArgument, "closed_at is invalid")
+	} else if req.ClosedAt.AsTime().Before(time.Now().Add(-maxTsDelta)) {
+		return nil, status.Error(codes.InvalidArgument, "closed_at is invalid")
 	}
 
 	pool, err := s.pools.GetPoolByID(ctx, req.Id)
@@ -275,7 +318,7 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 	if pool.IsOpen {
 		return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_POOL_OPEN}, nil
 	}
-	if pool.Resolution != ResolutionUnknown {
+	if pool.HasResolution() {
 		if pool.Resolution != resolution {
 			return &poolpb.ResolvePoolResponse{Result: poolpb.ResolvePoolResponse_DIFFERENT_OUTCOME_DECLARED}, nil
 		}
@@ -358,13 +401,19 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
 		}
 
+		isPaid, err := existing.IsPaid(ctx, s.codeData, s.pools, pool)
+		if err != nil {
+			return nil, err
+		}
+		if isPaid {
+			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_BET_OUTCOME_SOLIDIFIED}, nil
+		}
+
 		// User hasn't changed their selection, the RPC call is a no-op. Preserve
 		// the original bet metadata.
 		if existing.SelectedOutcome == model.SelectedOutcome {
 			return &poolpb.MakeBetResponse{}, nil
 		}
-
-		// todo: Check if this bet was paid for
 
 		err = s.pools.UpdateBetOutcome(ctx, model.ID, model.SelectedOutcome, model.Signature, model.Ts)
 		if err != nil {
@@ -375,6 +424,14 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 	default:
 		log.With(zap.Error(err)).Warn("Failure getting existing bet")
 		return nil, status.Error(codes.Internal, "failure getting existing bet")
+	}
+
+	isValid, reason, err := s.validateBetPayoutDestination(ctx, req.Auth.GetKeyPair().PubKey, req.Bet.PayoutDestination)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure validating payout destination")
+		return nil, status.Error(codes.Internal, "failure validating payout destination")
+	} else if !isValid {
+		return nil, status.Error(codes.InvalidArgument, reason)
 	}
 
 	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
@@ -392,7 +449,32 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 	return &poolpb.MakeBetResponse{}, nil
 }
 
-func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, includeBets bool) (*poolpb.PoolMetadata, error) {
+func (s *Server) validateBetPayoutDestination(ctx context.Context, owner, payoutDestination *commonpb.PublicKey) (bool, string, error) {
+	ownerAccount, err := codecommon.NewAccountFromPublicKeyBytes(owner.Value)
+	if err != nil {
+		return false, "", err
+	}
+	payoutDestinationAccount, err := codecommon.NewAccountFromPublicKeyBytes(payoutDestination.Value)
+	if err != nil {
+		return false, "", err
+	}
+
+	accountInfoRecord, err := s.codeData.GetAccountInfoByTokenAddress(ctx, payoutDestinationAccount.PublicKey().ToBase58())
+	switch err {
+	case nil, codeaccount.ErrAccountInfoNotFound:
+		if accountInfoRecord == nil || accountInfoRecord.AccountType != codecommonpb.AccountType_PRIMARY {
+			return false, "bet.payout_destination is not a code primary account", nil
+		}
+		if accountInfoRecord.OwnerAccount != ownerAccount.PublicKey().ToBase58() {
+			return false, "bet.payout_destination is not your code primary account", nil
+		}
+		return true, "", nil
+	default:
+		return false, "", err
+	}
+}
+
+func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, requestingUser *commonpb.UserId, includeBets bool) (*poolpb.PoolMetadata, error) {
 	pool, err := s.pools.GetPoolByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -409,13 +491,28 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, includeBet
 	}
 
 	var numYes, numNo int
-	for _, bet := range bets {
+	protoBets := make([]*poolpb.BetMetadata, len(bets))
+	for i, bet := range bets {
+		isPaid, err := bet.IsPaid(ctx, s.codeData, s.pools, pool)
+		if err != nil {
+			return nil, err
+		}
+
+		protoBet := bet.ToProto()
+		protoBet.IsIntentSubmitted = isPaid
+		protoBets[i] = protoBet
+
+		if !isPaid {
+			continue
+		}
+
 		if bet.SelectedOutcome {
 			numYes++
 		} else {
 			numNo++
 		}
 	}
+
 	protoPool.BetSummary = &poolpb.BetSummary{
 		Kind: &poolpb.BetSummary_BooleanSummary{
 			BooleanSummary: &poolpb.BetSummary_BooleanBetSummary{
@@ -424,17 +521,21 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, includeBet
 			},
 		},
 	}
-
-	if !includeBets {
-		return protoPool, nil
+	if includeBets {
+		protoPool.Bets = protoBets
 	}
 
-	for _, bet := range bets {
-		// log := log.With(zap.String("bet_id", BetIDString(bet.ID)))
+	if requestingUser != nil {
+		fundingDestinationAccount, err := codecommon.NewAccountFromPublicKeyBytes(pool.FundingDestination.Value)
+		if err != nil {
+			return nil, err
+		}
 
-		protoBet := bet.ToProto()
-		protoBet.IsIntentSubmitted = true // todo: verify bet has been paid for
-		protoPool.Bets = append(protoPool.Bets, bet.ToProto())
+		accountInfoRecord, err := s.codeData.GetAccountInfoByTokenAddress(ctx, fundingDestinationAccount.PublicKey().ToBase58())
+		if err != nil {
+			return nil, err
+		}
+		protoPool.DerivationIndex = accountInfoRecord.Index
 	}
 
 	return protoPool, nil

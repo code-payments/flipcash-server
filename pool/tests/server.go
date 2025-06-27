@@ -5,14 +5,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	codecommonpb "github.com/code-payments/code-protobuf-api/generated/go/common/v1"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
+	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
+	codeaccount "github.com/code-payments/code-server/pkg/code/data/account"
+	codeintent "github.com/code-payments/code-server/pkg/code/data/intent"
 	codetestutil "github.com/code-payments/code-server/pkg/testutil"
 	"github.com/code-payments/flipcash-server/account"
 	"github.com/code-payments/flipcash-server/auth"
@@ -43,16 +48,17 @@ func testServer_PoolManagement_HappyPath(t *testing.T, accounts account.Store, p
 
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
-	server := pool.NewServer(log, authz, accounts, pools)
-	codetestutil.SetupRandomSubsidizer(t, codedata.NewTestDataProvider())
+	codeData := codedata.NewTestDataProvider()
+	server := pool.NewServer(log, authz, accounts, pools, codeData)
+	codetestutil.SetupRandomSubsidizer(t, codeData)
 
+	creatorKey := model.MustGenerateKeyPair()
 	rendezvousKey := model.MustGenerateKeyPair()
 	poolID := pool.ToPoolID(rendezvousKey)
 	expected := generateNewProtoPool(poolID)
-
-	creatorKey := model.MustGenerateKeyPair()
 	accounts.Bind(ctx, expected.Creator, creatorKey.Proto())
 	accounts.SetRegistrationFlag(ctx, expected.Creator, true)
+	setupPoolAccountOnCode(t, codeData, creatorKey.Proto(), expected.FundingDestination)
 
 	getReq := &poolpb.GetPoolRequest{
 		Id: poolID,
@@ -126,25 +132,27 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
-	server := pool.NewServer(log, authz, accounts, pools)
-	codetestutil.SetupRandomSubsidizer(t, codedata.NewTestDataProvider())
+	codeData := codedata.NewTestDataProvider()
+	server := pool.NewServer(log, authz, accounts, pools, codeData)
+	codetestutil.SetupRandomSubsidizer(t, codeData)
 
+	creatorKey := model.MustGenerateKeyPair()
 	rendezvousKey := model.MustGenerateKeyPair()
 	poolID := pool.ToPoolID(rendezvousKey)
 	protoPool := generateNewProtoPool(poolID)
-
-	creatorKey := model.MustGenerateKeyPair()
 	accounts.Bind(ctx, protoPool.Creator, creatorKey.Proto())
 	accounts.SetRegistrationFlag(ctx, protoPool.Creator, true)
+	setupPoolAccountOnCode(t, codeData, creatorKey.Proto(), protoPool.FundingDestination)
 
 	var allBets []*poolpb.SignedBetMetadata
 	var betterKeys []model.KeyPair
 	for i := range 2 * pool.MaxParticipants {
 		bet := generateNewProtoBet(i%3 == 0)
-		allBets = append(allBets, bet)
 		betterKey := model.MustGenerateKeyPair()
 		accounts.Bind(ctx, bet.UserId, betterKey.Proto())
 		accounts.SetRegistrationFlag(ctx, bet.UserId, true)
+		setupPrimaryAccountOnCode(t, codeData, betterKey.Proto(), bet.PayoutDestination)
+		allBets = append(allBets, bet)
 		betterKeys = append(betterKeys, betterKey)
 	}
 
@@ -175,6 +183,8 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 			continue
 		}
 		require.Equal(t, poolpb.MakeBetResponse_OK, makeBetResp.Result)
+
+		simulateBetPayment(t, codeData, protoPool, bet)
 
 		expectedBets = append(expectedBets, bet)
 		expectedBetSignatures = append(expectedBetSignatures, makeBetReq.RendezvousSignature)
@@ -233,16 +243,17 @@ func testServer_Membership_HappyPath(t *testing.T, accounts account.Store, pools
 
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
-	server := pool.NewServer(log, authz, accounts, pools)
-	codetestutil.SetupRandomSubsidizer(t, codedata.NewTestDataProvider())
+	codeData := codedata.NewTestDataProvider()
+	server := pool.NewServer(log, authz, accounts, pools, codeData)
+	codetestutil.SetupRandomSubsidizer(t, codeData)
 
+	creatorKey := model.MustGenerateKeyPair()
 	rendezvousKey := model.MustGenerateKeyPair()
 	poolID := pool.ToPoolID(rendezvousKey)
 	expected := generateNewProtoPool(poolID)
-
-	creatorKey := model.MustGenerateKeyPair()
 	accounts.Bind(ctx, expected.Creator, creatorKey.Proto())
 	accounts.SetRegistrationFlag(ctx, expected.Creator, true)
+	setupPoolAccountOnCode(t, codeData, creatorKey.Proto(), expected.FundingDestination)
 
 	getPagedReq := &poolpb.GetPagedPoolsRequest{}
 	require.NoError(t, creatorKey.Auth(getPagedReq, &getPagedReq.Auth))
@@ -273,6 +284,7 @@ func testServer_Membership_HappyPath(t *testing.T, accounts account.Store, pools
 	betterKey := model.MustGenerateKeyPair()
 	accounts.Bind(ctx, bet.UserId, betterKey.Proto())
 	accounts.SetRegistrationFlag(ctx, bet.UserId, true)
+	setupPrimaryAccountOnCode(t, codeData, betterKey.Proto(), bet.PayoutDestination)
 
 	getPagedReq = &poolpb.GetPagedPoolsRequest{}
 	require.NoError(t, betterKey.Auth(getPagedReq, &getPagedReq.Auth))
@@ -329,4 +341,43 @@ func generateNewProtoBet(outcome bool) *poolpb.SignedBetMetadata {
 		PayoutDestination: model.MustGenerateKeyPair().Proto(),
 		Ts:                &timestamppb.Timestamp{Seconds: time.Now().Unix()},
 	}
+}
+
+func setupPoolAccountOnCode(t *testing.T, codeData codedata.Provider, ownerAccount, tokenAccount *commonpb.PublicKey) {
+	accountInfoRecord := &codeaccount.Record{
+		OwnerAccount:     base58.Encode(ownerAccount.Value),
+		AuthorityAccount: base58.Encode(model.MustGenerateKeyPair().Public()),
+		TokenAccount:     base58.Encode(tokenAccount.Value),
+		MintAccount:      codecommon.CoreMintAccount.PublicKey().ToBase58(),
+		AccountType:      codecommonpb.AccountType_POOL,
+	}
+	require.NoError(t, codeData.CreateAccountInfo(context.Background(), accountInfoRecord))
+}
+
+func setupPrimaryAccountOnCode(t *testing.T, codeData codedata.Provider, ownerAccount, tokenAccount *commonpb.PublicKey) {
+	accountInfoRecord := &codeaccount.Record{
+		OwnerAccount:     base58.Encode(ownerAccount.Value),
+		AuthorityAccount: base58.Encode(ownerAccount.Value),
+		TokenAccount:     base58.Encode(tokenAccount.Value),
+		MintAccount:      codecommon.CoreMintAccount.PublicKey().ToBase58(),
+		AccountType:      codecommonpb.AccountType_PRIMARY,
+	}
+	require.NoError(t, codeData.CreateAccountInfo(context.Background(), accountInfoRecord))
+}
+
+func simulateBetPayment(t *testing.T, codeData codedata.Provider, pool *poolpb.SignedPoolMetadata, bet *poolpb.SignedBetMetadata) {
+	intentRecord := &codeintent.Record{
+		IntentId:   base58.Encode(bet.BetId.Value),
+		IntentType: codeintent.SendPublicPayment,
+		SendPublicPaymentMetadata: &codeintent.SendPublicPaymentMetadata{
+			DestinationTokenAccount: base58.Encode(pool.FundingDestination.Value),
+			ExchangeCurrency:        "usd",
+			NativeAmount:            250.00,
+			ExchangeRate:            1.0,
+			Quantity:                codecommon.ToCoreMintQuarks(250),
+			UsdMarketValue:          250.00,
+		},
+		InitiatorOwnerAccount: base58.Encode(model.MustGenerateKeyPair().Public()),
+	}
+	require.NoError(t, codeData.SaveIntent(context.Background(), intentRecord))
 }

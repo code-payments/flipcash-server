@@ -5,9 +5,9 @@ go 1.24.0
 require (
 	firebase.google.com/go/v4 v4.15.2
 	github.com/ReneKroon/ttlcache v1.7.0
-	github.com/code-payments/code-protobuf-api v1.19.1-0.20250605155512-63da5d11d58a
-	github.com/code-payments/code-server v1.10.21-0.20250609150718-54647f50c66a
-	github.com/code-payments/flipcash-protobuf-api v1.4.15
+	github.com/code-payments/code-protobuf-api v1.19.1-0.20250618155621-c66659ab4ff5
+	github.com/code-payments/code-server v1.10.21-0.20250626174548-859a2fa9f011
+	github.com/code-payments/flipcash-protobuf-api v1.4.16-0.20250626185512-efb0b1393201
 	github.com/devsisters/go-applereceipt v0.0.0-20240805020915-fa22a0160fc2
 	github.com/georgysavva/scany/v2 v2.1.4
 	github.com/google/uuid v1.6.0
@@ -49,7 +49,6 @@ require (
 	github.com/docker/docker v27.1.1+incompatible // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/emirpasic/gods v1.12.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
@@ -82,7 +81,6 @@ require (
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/opencontainers/runc v1.1.13 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect

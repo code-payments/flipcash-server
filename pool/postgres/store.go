@@ -32,6 +32,14 @@ func (s *store) CreatePool(ctx context.Context, pool *pool.Pool) error {
 	return toMemberModel(pool.CreatorID, pool.ID).dbPut(ctx, s.pgxPool)
 }
 
+func (s *store) ClosePool(ctx context.Context, poolID *poolpb.PoolId, closedAt time.Time, newSignature *commonpb.Signature) error {
+	return dbClosePool(ctx, s.pgxPool, poolID, closedAt, newSignature)
+}
+
+func (s *store) ResolvePool(ctx context.Context, poolID *poolpb.PoolId, resolution pool.Resolution, newSignature *commonpb.Signature) error {
+	return dbResolvePool(ctx, s.pgxPool, poolID, resolution, newSignature)
+}
+
 func (s *store) GetPoolByID(ctx context.Context, poolID *poolpb.PoolId) (*pool.Pool, error) {
 	model, err := dbGetPoolByID(ctx, s.pgxPool, poolID)
 	if err != nil {
@@ -40,12 +48,12 @@ func (s *store) GetPoolByID(ctx context.Context, poolID *poolpb.PoolId) (*pool.P
 	return fromPoolModel(model)
 }
 
-func (s *store) ClosePool(ctx context.Context, poolID *poolpb.PoolId, closedAt time.Time, newSignature *commonpb.Signature) error {
-	return dbClosePool(ctx, s.pgxPool, poolID, closedAt, newSignature)
-}
-
-func (s *store) ResolvePool(ctx context.Context, poolID *poolpb.PoolId, resolution pool.Resolution, newSignature *commonpb.Signature) error {
-	return dbResolvePool(ctx, s.pgxPool, poolID, resolution, newSignature)
+func (s *store) GetPoolByFundingDestination(ctx context.Context, fundingDestination *commonpb.PublicKey) (*pool.Pool, error) {
+	model, err := dbGetPoolByFundingDestination(ctx, s.pgxPool, fundingDestination)
+	if err != nil {
+		return nil, err
+	}
+	return fromPoolModel(model)
 }
 
 func (s *store) CreateBet(ctx context.Context, bet *pool.Bet) error {
@@ -59,6 +67,18 @@ func (s *store) CreateBet(ctx context.Context, bet *pool.Bet) error {
 
 func (s *store) UpdateBetOutcome(ctx context.Context, betId *poolpb.BetId, newOutcome bool, newSignature *commonpb.Signature, newTs time.Time) error {
 	return dbUpdateBetOutcome(ctx, s.pgxPool, betId, newOutcome, newSignature, newTs)
+}
+
+func (s *store) MarkBetAsPaid(ctx context.Context, betId *poolpb.BetId) error {
+	return dbMarkBetAsPaid(ctx, s.pgxPool, betId)
+}
+
+func (s *store) GetBetByID(ctx context.Context, betID *poolpb.BetId) (*pool.Bet, error) {
+	model, err := dbGetBetByID(ctx, s.pgxPool, betID)
+	if err != nil {
+		return nil, err
+	}
+	return fromBetModel(model)
 }
 
 func (s *store) GetBetByUser(ctx context.Context, poolID *poolpb.PoolId, userID *commonpb.UserId) (*pool.Bet, error) {
