@@ -133,17 +133,20 @@ func (i *Integration) validateBettingPoolDistribution(ctx context.Context, inten
 		return err
 	}
 
-	var winningBets []*pool.Bet
+	var paidBets []*pool.Bet
 	for _, bet := range bets {
 		isPaid, err := bet.IsPaid(ctx, i.codeData, i.pools, bettingPool)
 		if err != nil {
 			return err
 		}
 
-		if !isPaid {
-			continue
+		if isPaid {
+			paidBets = append(paidBets, bet)
 		}
+	}
 
+	var winningBets []*pool.Bet
+	for _, bet := range paidBets {
 		switch bettingPool.Resolution {
 		case pool.ResolutionRefunded:
 			winningBets = append(winningBets, bet)
@@ -158,7 +161,12 @@ func (i *Integration) validateBettingPoolDistribution(ctx context.Context, inten
 		default:
 			return errors.New("unsupported resolution")
 		}
-
+	}
+	if len(winningBets) == 0 {
+		winningBets = paidBets
+	}
+	if len(winningBets) == 0 {
+		return codetransaction.NewIntentDeniedError("no winning bets for pool")
 	}
 
 	bettingPoolBalance, err := codebalance.CalculateFromCache(ctx, i.codeData, poolAccount)
