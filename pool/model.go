@@ -13,6 +13,9 @@ import (
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
+	codecommon "github.com/code-payments/code-server/pkg/code/common"
+	codedata "github.com/code-payments/code-server/pkg/code/data"
+	codeintent "github.com/code-payments/code-server/pkg/code/data/intent"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/model"
 )
@@ -64,6 +67,10 @@ func ToPoolModel(proto *poolpb.SignedPoolMetadata, signature *commonpb.Signature
 	}
 
 	return model
+}
+
+func (p *Pool) HasResolution() bool {
+	return p.Resolution != ResolutionUnknown
 }
 
 func (p *Pool) Clone() *Pool {
@@ -198,6 +205,7 @@ type Bet struct {
 	SelectedOutcome   bool
 	PayoutDestination *commonpb.PublicKey
 	Ts                time.Time
+	IsIntentSubmitted bool
 	Signature         *commonpb.Signature
 }
 
@@ -209,8 +217,57 @@ func ToBetModel(poolID *poolpb.PoolId, proto *poolpb.SignedBetMetadata, signatur
 		SelectedOutcome:   proto.SelectedOutcome.GetBooleanOutcome(),
 		PayoutDestination: proto.PayoutDestination,
 		Ts:                proto.Ts.AsTime(),
+		IsIntentSubmitted: false,
 		Signature:         signature,
 	}
+}
+
+func (b *Bet) IsPaid(ctx context.Context, codeData codedata.Provider, pools Store, pool *Pool) (bool, error) {
+	if b.IsIntentSubmitted {
+		return true, nil
+	}
+
+	intentId, err := codecommon.NewAccountFromPublicKeyBytes(b.ID.Value)
+	if err != nil {
+		return false, err
+	}
+
+	fundingDestinationAccout, err := codecommon.NewAccountFromPublicKeyBytes(pool.FundingDestination.Value)
+	if err != nil {
+		return false, err
+	}
+
+	intentRecord, err := codeData.GetIntent(ctx, intentId.PublicKey().ToBase58())
+	switch err {
+	case nil:
+	case codeintent.ErrIntentNotFound:
+		return false, nil
+	default:
+		return false, err
+	}
+
+	if intentRecord.IntentType != codeintent.SendPublicPayment {
+		return false, nil
+	}
+	if intentRecord.SendPublicPaymentMetadata.DestinationTokenAccount != fundingDestinationAccout.PublicKey().ToBase58() {
+		return false, nil
+	}
+	if string(intentRecord.SendPublicPaymentMetadata.ExchangeCurrency) != pool.BuyInCurrency {
+		return false, nil
+	}
+	if intentRecord.SendPublicPaymentMetadata.NativeAmount != pool.BuyInAmount {
+		return false, nil
+	}
+	if intentRecord.State == codeintent.StateRevoked {
+		return false, nil
+	}
+
+	err = pools.MarkBetAsPaid(ctx, b.ID)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func (b *Bet) Clone() *Bet {
@@ -221,6 +278,7 @@ func (b *Bet) Clone() *Bet {
 		SelectedOutcome:   b.SelectedOutcome,
 		PayoutDestination: proto.Clone(b.PayoutDestination).(*commonpb.PublicKey),
 		Ts:                b.Ts,
+		IsIntentSubmitted: b.IsIntentSubmitted,
 		Signature:         proto.Clone(b.Signature).(*commonpb.Signature),
 	}
 }

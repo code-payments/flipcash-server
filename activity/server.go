@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	codecommonpb "github.com/code-payments/code-protobuf-api/generated/go/common/v1"
 	activitypb "github.com/code-payments/flipcash-protobuf-api/generated/go/activity/v1"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 
@@ -245,6 +246,14 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				Currency:     string(intentMetadata.ExchangeCurrency),
 				NativeAmount: intentMetadata.NativeAmount,
 				Quarks:       intentMetadata.Quantity,
+			}
+
+			destinationAccountInfoRecord, err := s.codeData.GetAccountInfoByTokenAddress(ctx, intentMetadata.DestinationTokenAccount)
+			if err != nil {
+				return nil, err
+			}
+			if destinationAccountInfoRecord.AccountType == codecommonpb.AccountType_POOL {
+				continue
 			}
 
 			if intentRecord.InitiatorOwnerAccount == userOwnerAccount.PublicKey().ToBase58() {

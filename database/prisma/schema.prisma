@@ -118,6 +118,7 @@ model Bet {
   userId            String
   selectedOutcome   Boolean
   payoutDestination String
+  isIntentSubmitted Boolean @default(false)
   signature         String
 
   createdAt DateTime @default(now())
