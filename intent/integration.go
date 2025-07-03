@@ -145,35 +145,35 @@ func (i *Integration) validateBettingPoolDistribution(ctx context.Context, inten
 		}
 	}
 
-	var winningBets []*pool.Bet
+	var betsToPayout []*pool.Bet
 	for _, bet := range paidBets {
 		switch bettingPool.Resolution {
 		case pool.ResolutionRefunded:
-			winningBets = append(winningBets, bet)
+			betsToPayout = append(betsToPayout, bet)
 		case pool.ResolutionYes:
 			if bet.SelectedOutcome {
-				winningBets = append(winningBets, bet)
+				betsToPayout = append(betsToPayout, bet)
 			}
 		case pool.ResolutionNo:
 			if !bet.SelectedOutcome {
-				winningBets = append(winningBets, bet)
+				betsToPayout = append(betsToPayout, bet)
 			}
 		default:
 			return errors.New("unsupported resolution")
 		}
 	}
-	if len(winningBets) == 0 {
-		winningBets = paidBets
+	if len(betsToPayout) == 0 {
+		betsToPayout = paidBets
 	}
-	if len(winningBets) == 0 {
-		return codetransaction.NewIntentDeniedError("no winning bets for pool")
+	if len(betsToPayout) == 0 {
+		return codetransaction.NewIntentDeniedError("no bets to pay out for pool")
 	}
 
 	bettingPoolBalance, err := codebalance.CalculateFromCache(ctx, i.codeData, poolAccount)
 	if err != nil {
 		return err
 	}
-	minPayoutAmount := bettingPoolBalance / uint64(len(winningBets))
+	minPayoutAmount := bettingPoolBalance / uint64(len(betsToPayout))
 	maxPayoutAmount := minPayoutAmount + 1
 
 	remainingPoolBalance := int64(bettingPoolBalance)
@@ -218,10 +218,10 @@ func (i *Integration) validateBettingPoolDistribution(ctx context.Context, inten
 	}
 
 	// Ensure all winning bets are paid
-	if len(actions) != len(winningBets) {
-		return codetransaction.NewIntentValidationErrorf("expected %d actions", len(winningBets))
+	if len(actions) != len(betsToPayout) {
+		return codetransaction.NewIntentValidationErrorf("expected %d actions", len(betsToPayout))
 	}
-	for _, bet := range winningBets {
+	for _, bet := range betsToPayout {
 		payoutDestinationAccount, err := common.NewAccountFromPublicKeyBytes(bet.PayoutDestination.Value)
 		if err != nil {
 			return err

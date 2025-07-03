@@ -28,7 +28,8 @@ import (
 
 // todo: Add tests around more edge case result codes and flows
 // todo: Add tests around signature verification
-// todo: Add tests around verified bet payments (when implemented)
+// todo: Add tests around verified bet payments
+// todo: Add tests for user summaries
 // todo: Add more test for paging APIs, but those are well covered in store tests
 
 func RunServerTests(t *testing.T, accounts account.Store, pools pool.Store, teardown func()) {
@@ -206,8 +207,10 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 		require.NoError(t, protoutil.ProtoEqualError(expectedBetSignatures[i], actual.RendezvousSignature))
 		require.False(t, actual.IsIntentSubmitted)
 	}
-	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes, 0)
-	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo, 0)
+	require.EqualValues(t, 0, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes)
+	require.EqualValues(t, 0, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo)
+	require.EqualValues(t, protoPool.BuyIn.Currency, getPoolResp.Pool.BetSummary.TotalAmountBet.Currency)
+	require.EqualValues(t, 0, getPoolResp.Pool.BetSummary.TotalAmountBet.NativeAmount)
 
 	for _, bet := range expectedBets {
 		simulateBetPayment(t, codeData, protoPool, bet)
@@ -225,8 +228,10 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 		require.NoError(t, protoutil.ProtoEqualError(expectedBetSignatures[i], actual.RendezvousSignature))
 		require.True(t, actual.IsIntentSubmitted)
 	}
-	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes, 34)
-	require.EqualValues(t, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo, 66)
+	require.EqualValues(t, 34, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes)
+	require.EqualValues(t, 66, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo)
+	require.EqualValues(t, protoPool.BuyIn.Currency, getPoolResp.Pool.BetSummary.TotalAmountBet.Currency)
+	require.EqualValues(t, 100*protoPool.BuyIn.NativeAmount, getPoolResp.Pool.BetSummary.TotalAmountBet.NativeAmount)
 
 	protoPool.IsOpen = false
 	protoPool.ClosedAt = &timestamppb.Timestamp{Seconds: time.Now().Unix()}

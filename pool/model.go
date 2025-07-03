@@ -266,6 +266,7 @@ func (b *Bet) IsPaid(ctx context.Context, codeData codedata.Provider, pools Stor
 	if err != nil {
 		return false, err
 	}
+	b.IsIntentSubmitted = true
 
 	return true, nil
 }

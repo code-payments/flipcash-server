@@ -3,6 +3,7 @@ package pool
 import (
 	"bytes"
 	"context"
+	"errors"
 	"time"
 
 	"go.uber.org/zap"
@@ -156,7 +157,17 @@ func (s *Server) validatePoolFundingDestination(ctx context.Context, owner *comm
 func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*poolpb.GetPoolResponse, error) {
 	log := s.log.With(zap.String("pool_id", PoolIDString(req.Id)))
 
-	protoPool, err := s.getProtoPool(ctx, req.Id, nil, !req.ExcludeBets)
+	var userID *commonpb.UserId
+	var err error
+	if req.Auth != nil {
+		userID, err = s.auth.Authorize(ctx, req, &req.Auth)
+		if err != nil {
+			return nil, err
+		}
+		log = log.With(zap.String("user_id", model.UserIDString(userID)))
+	}
+
+	protoPool, err := s.getProtoPool(ctx, req.Id, userID, !req.ExcludeBets)
 	if err == ErrPoolNotFound {
 		return &poolpb.GetPoolResponse{Result: poolpb.GetPoolResponse_NOT_FOUND}, nil
 	} else if err != nil {
@@ -480,6 +491,7 @@ func (s *Server) validateBetPayoutDestination(ctx context.Context, owner, payout
 	}
 }
 
+// todo: refactor this logic
 func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, requestingUser *commonpb.UserId, includeBets bool) (*poolpb.PoolMetadata, error) {
 	pool, err := s.pools.GetPoolByID(ctx, id)
 	if err != nil {
@@ -526,22 +538,101 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, requesting
 				NumNo:  uint32(numNo),
 			},
 		},
+		TotalAmountBet: &commonpb.FiatPaymentAmount{
+			Currency:     protoPool.VerifiedMetadata.BuyIn.Currency,
+			NativeAmount: float64(numYes+numNo) * protoPool.VerifiedMetadata.BuyIn.NativeAmount,
+		},
 	}
 	if includeBets {
 		protoPool.Bets = protoBets
 	}
 
-	if requestingUser != nil && bytes.Equal(requestingUser.Value, protoPool.VerifiedMetadata.Creator.Value) {
-		fundingDestinationAccount, err := codecommon.NewAccountFromPublicKeyBytes(pool.FundingDestination.Value)
-		if err != nil {
-			return nil, err
+	if requestingUser != nil {
+		protoPool.UserSummary = &poolpb.UserPoolSummary{
+			Outcome: &poolpb.UserPoolSummary_None{
+				None: &poolpb.UserPoolSummary_NoOutcome{},
+			},
 		}
 
-		accountInfoRecord, err := s.codeData.GetAccountInfoByTokenAddress(ctx, fundingDestinationAccount.PublicKey().ToBase58())
-		if err != nil {
-			return nil, err
+		var userBet *Bet
+		for _, bet := range bets {
+			if bytes.Equal(requestingUser.Value, bet.UserID.Value) {
+				userBet = bet
+				break
+			}
 		}
-		protoPool.DerivationIndex = accountInfoRecord.Index
+
+		if userBet != nil {
+			isUserBetPaid, err := userBet.IsPaid(ctx, s.codeData, s.pools, pool)
+			if err != nil {
+				return nil, err
+			}
+
+			if pool.HasResolution() && isUserBetPaid {
+				var isUserWinner bool
+				var isUserRefunded bool
+				var numWinners, numLosers int
+				switch pool.Resolution {
+				case ResolutionRefunded:
+					isUserWinner = false
+					isUserRefunded = true
+				case ResolutionYes:
+					isUserWinner = userBet.SelectedOutcome
+					isUserRefunded = numYes == 0
+					numWinners = numYes
+					numLosers = numNo
+				case ResolutionNo:
+					isUserWinner = !userBet.SelectedOutcome
+					isUserRefunded = numNo == 0
+					numWinners = numNo
+					numLosers = numYes
+				default:
+					return nil, errors.New("unsupported resolution")
+				}
+
+				if isUserRefunded {
+					protoPool.UserSummary = &poolpb.UserPoolSummary{
+						Outcome: &poolpb.UserPoolSummary_Refund{
+							Refund: &poolpb.UserPoolSummary_RefundOutcome{
+								AmountRefunded: protoPool.VerifiedMetadata.BuyIn,
+							},
+						},
+					}
+				} else if isUserWinner {
+					protoPool.UserSummary = &poolpb.UserPoolSummary{
+						Outcome: &poolpb.UserPoolSummary_Win{
+							Win: &poolpb.UserPoolSummary_WinOutcome{
+								AmountWon: &commonpb.FiatPaymentAmount{
+									Currency:     protoPool.VerifiedMetadata.BuyIn.Currency,
+									NativeAmount: (float64(numWinners+numLosers) * protoPool.VerifiedMetadata.BuyIn.NativeAmount) / float64(numWinners),
+								},
+							},
+						},
+					}
+				} else {
+					protoPool.UserSummary = &poolpb.UserPoolSummary{
+						Outcome: &poolpb.UserPoolSummary_Lose{
+							Lose: &poolpb.UserPoolSummary_LoseOutcome{
+								AmountLost: protoPool.VerifiedMetadata.BuyIn,
+							},
+						},
+					}
+				}
+			}
+		}
+
+		if bytes.Equal(requestingUser.Value, protoPool.VerifiedMetadata.Creator.Value) {
+			fundingDestinationAccount, err := codecommon.NewAccountFromPublicKeyBytes(pool.FundingDestination.Value)
+			if err != nil {
+				return nil, err
+			}
+
+			accountInfoRecord, err := s.codeData.GetAccountInfoByTokenAddress(ctx, fundingDestinationAccount.PublicKey().ToBase58())
+			if err != nil {
+				return nil, err
+			}
+			protoPool.DerivationIndex = accountInfoRecord.Index
+		}
 	}
 
 	return protoPool, nil
