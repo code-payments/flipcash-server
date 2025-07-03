@@ -16,6 +16,7 @@ import (
 
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
+	"github.com/code-payments/code-server/pkg/code/data/account"
 	codeintent "github.com/code-payments/code-server/pkg/code/data/intent"
 	codetransaction "github.com/code-payments/code-server/pkg/code/server/transaction"
 	codecurrency "github.com/code-payments/code-server/pkg/currency"
@@ -249,10 +250,10 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 			}
 
 			destinationAccountInfoRecord, err := s.codeData.GetAccountInfoByTokenAddress(ctx, intentMetadata.DestinationTokenAccount)
-			if err != nil {
+			if err != nil && err != account.ErrAccountInfoNotFound {
 				return nil, err
 			}
-			if destinationAccountInfoRecord.AccountType == codecommonpb.AccountType_POOL {
+			if destinationAccountInfoRecord != nil && destinationAccountInfoRecord.AccountType == codecommonpb.AccountType_POOL {
 				continue
 			}
 
