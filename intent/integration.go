@@ -13,6 +13,7 @@ import (
 	codebalance "github.com/code-payments/code-server/pkg/code/balance"
 	"github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
+	"github.com/code-payments/code-server/pkg/code/data/account"
 	codeintent "github.com/code-payments/code-server/pkg/code/data/intent"
 	codetransaction "github.com/code-payments/code-server/pkg/code/server/transaction"
 	"github.com/code-payments/flipcash-server/pool"
@@ -59,7 +60,9 @@ func (i *Integration) validatePotentialBetPayment(ctx context.Context, intentRec
 	}
 
 	destinationAccountInfoRecord, err := i.codeData.GetAccountInfoByTokenAddress(ctx, destinationTokenAccount.PublicKey().ToBase58())
-	if err != nil {
+	if err == account.ErrAccountInfoNotFound {
+		return nil
+	} else if err != nil {
 		return err
 	}
 
