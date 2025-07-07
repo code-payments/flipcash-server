@@ -15,12 +15,27 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 	switch typed := notification.AdditionalMetadata.(type) {
 	case *activitypb.Notification_WelcomeBonus:
 		localizedText = "Welcome Bonus"
+
 	case *activitypb.Notification_GaveUsdc:
 		localizedText = "Gave"
+
 	case *activitypb.Notification_ReceivedUsdc:
 		localizedText = "Received"
+
 	case *activitypb.Notification_WithdrewUsdc:
 		localizedText = "Withdrew"
+
+	case *activitypb.Notification_DepositedUsdc:
+		localizedText = "Deposited"
+
+	case *activitypb.Notification_PaidUsdc:
+		switch typed.PaidUsdc.PaymentMetadata.(type) {
+		case *activitypb.PaidUsdcNotificationMetadata_Pool:
+			localizedText = "Paid into Pool"
+		default:
+			return errors.New("unsupported paid usdc payment metadata type")
+		}
+
 	case *activitypb.Notification_SentUsdc:
 		if typed.SentUsdc.CanInitiateCancelAction {
 			localizedText = "Sending"
@@ -46,11 +61,12 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 				}
 			}
 		}
-	case *activitypb.Notification_DepositedUsdc:
-		localizedText = "Deposited"
+
 	default:
 		return errors.New("unsupported notification type")
 	}
+
 	notification.LocalizedText = localizedText
+
 	return nil
 }

@@ -10,13 +10,11 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	codecommonpb "github.com/code-payments/code-protobuf-api/generated/go/common/v1"
 	activitypb "github.com/code-payments/flipcash-protobuf-api/generated/go/activity/v1"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
-	"github.com/code-payments/code-server/pkg/code/data/account"
 	codeintent "github.com/code-payments/code-server/pkg/code/data/intent"
 	codetransaction "github.com/code-payments/code-server/pkg/code/server/transaction"
 	codecurrency "github.com/code-payments/code-server/pkg/currency"
@@ -24,6 +22,7 @@ import (
 	"github.com/code-payments/code-server/pkg/pointer"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/model"
+	"github.com/code-payments/flipcash-server/pool"
 )
 
 const (
@@ -38,6 +37,7 @@ var (
 type Server struct {
 	log      *zap.Logger
 	authz    auth.Authorizer
+	pools    pool.Store
 	codeData codedata.Provider
 
 	activitypb.UnimplementedActivityFeedServer
@@ -46,11 +46,13 @@ type Server struct {
 func NewServer(
 	log *zap.Logger,
 	authz auth.Authorizer,
+	pools pool.Store,
 	codeData codedata.Provider,
 ) *Server {
 	return &Server{
 		log:      log,
 		authz:    authz,
+		pools:    pools,
 		codeData: codeData,
 	}
 }
@@ -249,28 +251,26 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				Quarks:       intentMetadata.Quantity,
 			}
 
-			destinationAccountInfoRecord, err := s.codeData.GetAccountInfoByTokenAddress(ctx, intentMetadata.DestinationTokenAccount)
-			if err != nil && err != account.ErrAccountInfoNotFound {
+			destinationAccount, err := codecommon.NewAccountFromPublicKeyString(intentMetadata.DestinationTokenAccount)
+			if err != nil {
 				return nil, err
 			}
-			if destinationAccountInfoRecord != nil && destinationAccountInfoRecord.AccountType == codecommonpb.AccountType_POOL {
-				continue
+
+			bettingPool, err := s.pools.GetPoolByFundingDestination(ctx, &commonpb.PublicKey{Value: destinationAccount.PublicKey().ToBytes()})
+			if err != nil && err != pool.ErrPoolNotFound {
+				return nil, err
 			}
+			isBettingPoolPayment := bettingPool != nil
 
 			if intentRecord.InitiatorOwnerAccount == userOwnerAccount.PublicKey().ToBase58() {
 				if intentMetadata.IsRemoteSend {
-					vaultAccount, err := codecommon.NewAccountFromPublicKeyString(intentMetadata.DestinationTokenAccount)
-					if err != nil {
-						return nil, err
-					}
-
-					isClaimed, err := isGiftCardClaimed(ctx, s.codeData, vaultAccount)
+					isClaimed, err := isGiftCardClaimed(ctx, s.codeData, destinationAccount)
 					if err != nil {
 						return nil, err
 					}
 
 					notification.AdditionalMetadata = &activitypb.Notification_SentUsdc{SentUsdc: &activitypb.SentUsdcNotificationMetadata{
-						Vault:                   &commonpb.PublicKey{Value: vaultAccount.ToProto().Value},
+						Vault:                   &commonpb.PublicKey{Value: destinationAccount.ToProto().Value},
 						CanInitiateCancelAction: !isClaimed,
 					}}
 					if !isClaimed {
@@ -278,6 +278,14 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 					}
 				} else if intentMetadata.IsWithdrawal {
 					notification.AdditionalMetadata = &activitypb.Notification_WithdrewUsdc{WithdrewUsdc: &activitypb.WithdrewUsdcNotificationMetadata{}}
+				} else if isBettingPoolPayment {
+					notification.AdditionalMetadata = &activitypb.Notification_PaidUsdc{PaidUsdc: &activitypb.PaidUsdcNotificationMetadata{
+						PaymentMetadata: &activitypb.PaidUsdcNotificationMetadata_Pool{
+							Pool: &activitypb.PaidUsdcNotificationMetadata_PoolPaymentMetadata{
+								PoolId: bettingPool.ID,
+							},
+						},
+					}}
 				} else {
 					notification.AdditionalMetadata = &activitypb.Notification_GaveUsdc{GaveUsdc: &activitypb.GaveUsdcNotificationMetadata{}}
 				}
@@ -286,6 +294,8 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 					notification.AdditionalMetadata = &activitypb.Notification_WelcomeBonus{WelcomeBonus: &activitypb.WelcomeBonusNotificationMetadata{}}
 				} else if intentMetadata.IsWithdrawal {
 					notification.AdditionalMetadata = &activitypb.Notification_DepositedUsdc{DepositedUsdc: &activitypb.DepositedUsdcNotificationMetadata{}}
+				} else if isBettingPoolPayment {
+					// Show nothing on receiver side for reiving a bet payment to their pool
 				} else {
 					notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
 				}
