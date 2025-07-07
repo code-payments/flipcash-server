@@ -296,6 +296,7 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 					notification.AdditionalMetadata = &activitypb.Notification_DepositedUsdc{DepositedUsdc: &activitypb.DepositedUsdcNotificationMetadata{}}
 				} else if isBettingPoolPayment {
 					// Show nothing on receiver side for reiving a bet payment to their pool
+					continue
 				} else {
 					notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
 				}
