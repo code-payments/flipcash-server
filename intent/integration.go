@@ -177,7 +177,6 @@ func (i *Integration) validateBettingPoolDistribution(ctx context.Context, inten
 		return err
 	}
 	minPayoutAmount := bettingPoolBalance / uint64(len(betsToPayout))
-	maxPayoutAmount := minPayoutAmount + 1
 
 	remainingPoolBalance := int64(bettingPoolBalance)
 	seenPayoutDestinations := make(map[string]any)
@@ -202,8 +201,10 @@ func (i *Integration) validateBettingPoolDistribution(ctx context.Context, inten
 		}
 
 		// Each winning bet should be paid an equal amount
-		if payoutAmount < minPayoutAmount || payoutAmount > maxPayoutAmount {
-			return codetransaction.NewActionValidationErrorf(action, "bet payout amount must be in [%d, %d]", minPayoutAmount, maxPayoutAmount)
+		//
+		// todo: Enforce maximum when client-side fix is deployed to evenly distribute remainder
+		if payoutAmount < minPayoutAmount {
+			return codetransaction.NewActionValidationErrorf(action, "bet payout amount minimum is %d", minPayoutAmount)
 		}
 		remainingPoolBalance -= int64(payoutAmount)
 
