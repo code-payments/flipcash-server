@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	activitypb "github.com/code-payments/flipcash-protobuf-api/generated/go/activity/v1"
+	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
@@ -34,6 +35,21 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 			localizedText = "Paid into Pool"
 		default:
 			return errors.New("unsupported paid usdc payment metadata type")
+		}
+
+	case *activitypb.Notification_DistributedUsdc:
+		switch typed2 := typed.DistributedUsdc.DistributionMetadata.(type) {
+		case *activitypb.DistributedUsdcNotificationMetadata_Pool:
+			switch typed2.Pool.Outcome {
+			case poolpb.UserOutcome_WIN_OUTCOME:
+				localizedText = "Won from Pool"
+			case poolpb.UserOutcome_REFUND_OUTCOME:
+				localizedText = "Refund from Pool"
+			default:
+				return errors.New("unsupported distributed usdc pool outcome")
+			}
+		default:
+			return errors.New("unsupported distributed usdc distribution metadata type")
 		}
 
 	case *activitypb.Notification_SentUsdc:

@@ -205,7 +205,7 @@ type Bet struct {
 	SelectedOutcome   bool
 	PayoutDestination *commonpb.PublicKey
 	Ts                time.Time
-	IsIntentSubmitted bool
+	IsIntentSubmitted bool // Use IsPaid utility before trusting this value
 	Signature         *commonpb.Signature
 }
 
@@ -222,7 +222,7 @@ func ToBetModel(poolID *poolpb.PoolId, proto *poolpb.SignedBetMetadata, signatur
 	}
 }
 
-func (b *Bet) IsPaid(ctx context.Context, codeData codedata.Provider, pools Store, pool *Pool) (bool, error) {
+func (b *Bet) IsPaid(ctx context.Context, pools Store, codeData codedata.Provider, pool *Pool) (bool, error) {
 	if b.IsIntentSubmitted {
 		return true, nil
 	}

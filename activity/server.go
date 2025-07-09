@@ -12,6 +12,7 @@ import (
 
 	activitypb "github.com/code-payments/flipcash-protobuf-api/generated/go/activity/v1"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
+	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
@@ -26,7 +27,7 @@ import (
 )
 
 const (
-	defaultMaxNotifications = 1024
+	defaultMaxNotifications = 100
 )
 
 var (
@@ -68,7 +69,7 @@ func (s *Server) GetLatestNotifications(ctx context.Context, req *activitypb.Get
 		zap.String("activity_feed_type", req.Type.String()),
 	)
 
-	notifications, err := s.getPagedNotifications(ctx, log, req.Auth.GetKeyPair().PubKey, &commonpb.QueryOptions{
+	notifications, err := s.getPagedNotifications(ctx, log, userID, req.Auth.GetKeyPair().PubKey, &commonpb.QueryOptions{
 		PageSize: req.MaxItems,
 		Order:    commonpb.QueryOptions_DESC,
 	})
@@ -89,7 +90,7 @@ func (s *Server) GetPagedNotifications(ctx context.Context, req *activitypb.GetP
 		zap.String("activity_feed_type", req.Type.String()),
 	)
 
-	notifications, err := s.getPagedNotifications(ctx, log, req.Auth.GetKeyPair().PubKey, req.QueryOptions)
+	notifications, err := s.getPagedNotifications(ctx, log, userID, req.Auth.GetKeyPair().PubKey, req.QueryOptions)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "")
 	}
@@ -107,7 +108,7 @@ func (s *Server) GetBatchNotifications(ctx context.Context, req *activitypb.GetB
 		zap.Int("notification_count", len(req.Ids)),
 	)
 
-	notifications, err := s.getBatchNotifications(ctx, log, req.Auth.GetKeyPair().PubKey, req.Ids)
+	notifications, err := s.getBatchNotifications(ctx, log, userID, req.Auth.GetKeyPair().PubKey, req.Ids)
 	switch err {
 	case nil:
 		return &activitypb.GetBatchNotificationsResponse{Notifications: notifications}, nil
@@ -120,7 +121,7 @@ func (s *Server) GetBatchNotifications(ctx context.Context, req *activitypb.GetB
 	}
 }
 
-func (s *Server) getPagedNotifications(ctx context.Context, log *zap.Logger, pubKey *commonpb.PublicKey, queryOptions *commonpb.QueryOptions) ([]*activitypb.Notification, error) {
+func (s *Server) getPagedNotifications(ctx context.Context, log *zap.Logger, userID *commonpb.UserId, pubKey *commonpb.PublicKey, queryOptions *commonpb.QueryOptions) ([]*activitypb.Notification, error) {
 	limit := defaultMaxNotifications
 	if queryOptions.PageSize > 0 {
 		limit = int(queryOptions.PageSize)
@@ -136,7 +137,7 @@ func (s *Server) getPagedNotifications(ctx context.Context, log *zap.Logger, pub
 		pagingToken = pointer.String(base58.Encode(queryOptions.PagingToken.Value))
 	}
 
-	notifications, err := s.getNotificationsFromPagedIntents(ctx, log, pubKey, pagingToken, direction, limit)
+	notifications, err := s.getNotificationsFromPagedIntents(ctx, log, userID, pubKey, pagingToken, direction, limit)
 	if err != nil {
 		log.Warn("Failed to get notifications", zap.Error(err))
 		return nil, err
@@ -144,7 +145,7 @@ func (s *Server) getPagedNotifications(ctx context.Context, log *zap.Logger, pub
 	return notifications, nil
 }
 
-func (s *Server) getNotificationsFromPagedIntents(ctx context.Context, log *zap.Logger, pubKey *commonpb.PublicKey, pagingToken *string, direction codequery.Ordering, limit int) ([]*activitypb.Notification, error) {
+func (s *Server) getNotificationsFromPagedIntents(ctx context.Context, log *zap.Logger, userID *commonpb.UserId, pubKey *commonpb.PublicKey, pagingToken *string, direction codequery.Ordering, limit int) ([]*activitypb.Notification, error) {
 	userOwnerAccount, err := codecommon.NewAccountFromPublicKeyBytes(pubKey.Value)
 	if err != nil {
 		return nil, err
@@ -172,11 +173,11 @@ func (s *Server) getNotificationsFromPagedIntents(ctx context.Context, log *zap.
 	} else if err != nil {
 		return nil, err
 	}
-	return s.toLocalizedNotifications(ctx, log, userOwnerAccount, intentRecords)
+	return s.toLocalizedNotifications(ctx, log, userID, userOwnerAccount, intentRecords)
 }
 
-func (s *Server) getBatchNotifications(ctx context.Context, log *zap.Logger, pubKey *commonpb.PublicKey, ids []*activitypb.NotificationId) ([]*activitypb.Notification, error) {
-	notifications, err := s.getNotificationsFromBatchIntents(ctx, log, pubKey, ids)
+func (s *Server) getBatchNotifications(ctx context.Context, log *zap.Logger, userID *commonpb.UserId, pubKey *commonpb.PublicKey, ids []*activitypb.NotificationId) ([]*activitypb.Notification, error) {
+	notifications, err := s.getNotificationsFromBatchIntents(ctx, log, userID, pubKey, ids)
 	if err != nil {
 		log.Warn("Failed to get notifications", zap.Error(err))
 		return nil, err
@@ -184,7 +185,7 @@ func (s *Server) getBatchNotifications(ctx context.Context, log *zap.Logger, pub
 	return notifications, nil
 }
 
-func (s *Server) getNotificationsFromBatchIntents(ctx context.Context, log *zap.Logger, pubKey *commonpb.PublicKey, ids []*activitypb.NotificationId) ([]*activitypb.Notification, error) {
+func (s *Server) getNotificationsFromBatchIntents(ctx context.Context, log *zap.Logger, userID *commonpb.UserId, pubKey *commonpb.PublicKey, ids []*activitypb.NotificationId) ([]*activitypb.Notification, error) {
 	userOwnerAccount, err := codecommon.NewAccountFromPublicKeyBytes(pubKey.Value)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "")
@@ -222,10 +223,10 @@ func (s *Server) getNotificationsFromBatchIntents(ctx context.Context, log *zap.
 		intentRecords = append(intentRecords, intentRecord)
 	}
 
-	return s.toLocalizedNotifications(ctx, log, userOwnerAccount, intentRecords)
+	return s.toLocalizedNotifications(ctx, log, userID, userOwnerAccount, intentRecords)
 }
 
-func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, userOwnerAccount *codecommon.Account, intentRecords []*codeintent.Record) ([]*activitypb.Notification, error) {
+func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, userID *commonpb.UserId, userOwnerAccount *codecommon.Account, intentRecords []*codeintent.Record) ([]*activitypb.Notification, error) {
 	welcomeBonusIntentID := codetransaction.GetAirdropIntentId(codetransaction.AirdropTypeWelcomeBonus, userOwnerAccount.PublicKey().ToBase58())
 
 	var notifications []*activitypb.Notification
@@ -301,6 +302,7 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 					notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
 				}
 			}
+
 		case codeintent.ReceivePaymentsPublicly:
 			intentMetadata := intentRecord.ReceivePaymentsPubliclyMetadata
 
@@ -314,6 +316,7 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				Quarks:       intentMetadata.Quantity,
 			}
 			notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
+
 		case codeintent.ExternalDeposit:
 			intentMetadata := intentRecord.ExternalDepositMetadata
 			notification.PaymentAmount = &commonpb.UsdcPaymentAmount{
@@ -322,6 +325,62 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				Quarks:       intentMetadata.Quantity,
 			}
 			notification.AdditionalMetadata = &activitypb.Notification_DepositedUsdc{DepositedUsdc: &activitypb.DepositedUsdcNotificationMetadata{}}
+
+		case codeintent.PublicDistribution:
+			intentMetadata := intentRecord.PublicDistributionMetadata
+
+			sourceAccount, err := codecommon.NewAccountFromPublicKeyString(intentMetadata.Source)
+			if err != nil {
+				return nil, err
+			}
+
+			bettingPool, err := s.pools.GetPoolByFundingDestination(ctx, &commonpb.PublicKey{Value: sourceAccount.PublicKey().ToBytes()})
+			if err != nil {
+				return nil, err
+			}
+
+			var userDistribution *codeintent.Distribution
+			for _, distribution := range intentMetadata.Distributions {
+				if distribution.DestinationOwnerAccount == userOwnerAccount.PublicKey().ToBase58() {
+					userDistribution = distribution
+					break
+				}
+			}
+			if userDistribution == nil {
+				continue
+			}
+
+			var userOutcome poolpb.UserOutcome
+			var nativeAmount float64
+			userPoolSummary, err := pool.GetUserSummary(ctx, s.pools, s.codeData, userID, bettingPool)
+			if err != nil {
+				return nil, err
+			}
+			switch typed := userPoolSummary.Outcome.(type) {
+			case *poolpb.UserPoolSummary_Refund:
+				userOutcome = poolpb.UserOutcome_REFUND_OUTCOME
+				nativeAmount = typed.Refund.AmountRefunded.NativeAmount
+			case *poolpb.UserPoolSummary_Win:
+				userOutcome = poolpb.UserOutcome_WIN_OUTCOME
+				nativeAmount = typed.Win.AmountWon.NativeAmount
+			default:
+				return nil, errors.New("unexpected user pool outcome")
+			}
+
+			notification.PaymentAmount = &commonpb.UsdcPaymentAmount{
+				Currency:     string(bettingPool.BuyInCurrency),
+				NativeAmount: nativeAmount,
+				Quarks:       userDistribution.Quantity,
+			}
+			notification.AdditionalMetadata = &activitypb.Notification_DistributedUsdc{DistributedUsdc: &activitypb.DistributedUsdcNotificationMetadata{
+				DistributionMetadata: &activitypb.DistributedUsdcNotificationMetadata_Pool{
+					Pool: &activitypb.DistributedUsdcNotificationMetadata_PoolDistributionMetadata{
+						PoolId:  bettingPool.ID,
+						Outcome: userOutcome,
+					},
+				},
+			}}
+
 		default:
 			continue
 		}

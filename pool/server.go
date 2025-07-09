@@ -3,7 +3,6 @@ package pool
 import (
 	"bytes"
 	"context"
-	"errors"
 	"time"
 
 	"go.uber.org/zap"
@@ -418,7 +417,7 @@ func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*pool
 			return &poolpb.MakeBetResponse{Result: poolpb.MakeBetResponse_MULTIPLE_BETS}, nil
 		}
 
-		isPaid, err := existing.IsPaid(ctx, s.codeData, s.pools, pool)
+		isPaid, err := existing.IsPaid(ctx, s.pools, s.codeData, pool)
 		if err != nil {
 			return nil, err
 		}
@@ -491,7 +490,6 @@ func (s *Server) validateBetPayoutDestination(ctx context.Context, owner, payout
 	}
 }
 
-// todo: refactor this logic
 func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, requestingUser *commonpb.UserId, includeBets bool) (*poolpb.PoolMetadata, error) {
 	pool, err := s.pools.GetPoolByID(ctx, id)
 	if err != nil {
@@ -501,126 +499,28 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, requesting
 	protoPool := pool.ToProto()
 	protoPool.IsFundingDestinationInitialized = true
 
-	bets, err := s.pools.GetBetsByPool(ctx, id)
-	switch err {
-	case nil, ErrBetNotFound:
-	default:
+	betSummary, bets, err := GetBetSummary(ctx, s.pools, s.codeData, pool)
+	if err != nil {
 		return nil, err
 	}
 
-	var numYes, numNo int
-	protoBets := make([]*poolpb.BetMetadata, len(bets))
-	for i, bet := range bets {
-		isPaid, err := bet.IsPaid(ctx, s.codeData, s.pools, pool)
-		if err != nil {
-			return nil, err
-		}
-
-		protoBet := bet.ToProto()
-		protoBet.IsIntentSubmitted = isPaid
-		protoBets[i] = protoBet
-
-		if !isPaid {
-			continue
-		}
-
-		if bet.SelectedOutcome {
-			numYes++
-		} else {
-			numNo++
-		}
-	}
-
-	protoPool.BetSummary = &poolpb.BetSummary{
-		Kind: &poolpb.BetSummary_BooleanSummary{
-			BooleanSummary: &poolpb.BetSummary_BooleanBetSummary{
-				NumYes: uint32(numYes),
-				NumNo:  uint32(numNo),
-			},
-		},
-		TotalAmountBet: &commonpb.FiatPaymentAmount{
-			Currency:     protoPool.VerifiedMetadata.BuyIn.Currency,
-			NativeAmount: float64(numYes+numNo) * protoPool.VerifiedMetadata.BuyIn.NativeAmount,
-		},
-	}
+	protoPool.BetSummary = betSummary
 	if includeBets {
-		protoPool.Bets = protoBets
+		protoPool.Bets = make([]*poolpb.BetMetadata, len(bets))
+		for i, bet := range bets {
+			protoPool.Bets[i] = bet.ToProto()
+			protoPool.Bets[i].IsIntentSubmitted = bet.IsIntentSubmitted
+		}
 	}
 
 	if requestingUser != nil {
-		protoPool.UserSummary = &poolpb.UserPoolSummary{
-			Outcome: &poolpb.UserPoolSummary_None{
-				None: &poolpb.UserPoolSummary_NoOutcome{},
-			},
+		userSummary, err := getUserSummaryWithCachedBetSummary(ctx, s.pools, s.codeData, requestingUser, pool, betSummary)
+		if err != nil {
+			return nil, err
 		}
+		protoPool.UserSummary = userSummary
 
-		var userBet *Bet
-		for _, bet := range bets {
-			if bytes.Equal(requestingUser.Value, bet.UserID.Value) {
-				userBet = bet
-				break
-			}
-		}
-
-		if userBet != nil {
-			isUserBetPaid, err := userBet.IsPaid(ctx, s.codeData, s.pools, pool)
-			if err != nil {
-				return nil, err
-			}
-
-			if pool.HasResolution() && isUserBetPaid {
-				var isUserWinner bool
-				var isUserRefunded bool
-				var numWinners, numLosers int
-				switch pool.Resolution {
-				case ResolutionRefunded:
-					isUserWinner = false
-					isUserRefunded = true
-				case ResolutionYes:
-					isUserWinner = userBet.SelectedOutcome
-					isUserRefunded = numYes == 0
-					numWinners = numYes
-					numLosers = numNo
-				case ResolutionNo:
-					isUserWinner = !userBet.SelectedOutcome
-					isUserRefunded = numNo == 0
-					numWinners = numNo
-					numLosers = numYes
-				default:
-					return nil, errors.New("unsupported resolution")
-				}
-
-				if isUserRefunded {
-					protoPool.UserSummary = &poolpb.UserPoolSummary{
-						Outcome: &poolpb.UserPoolSummary_Refund{
-							Refund: &poolpb.UserPoolSummary_RefundOutcome{
-								AmountRefunded: protoPool.VerifiedMetadata.BuyIn,
-							},
-						},
-					}
-				} else if isUserWinner {
-					protoPool.UserSummary = &poolpb.UserPoolSummary{
-						Outcome: &poolpb.UserPoolSummary_Win{
-							Win: &poolpb.UserPoolSummary_WinOutcome{
-								AmountWon: &commonpb.FiatPaymentAmount{
-									Currency:     protoPool.VerifiedMetadata.BuyIn.Currency,
-									NativeAmount: (float64(numWinners+numLosers) * protoPool.VerifiedMetadata.BuyIn.NativeAmount) / float64(numWinners),
-								},
-							},
-						},
-					}
-				} else {
-					protoPool.UserSummary = &poolpb.UserPoolSummary{
-						Outcome: &poolpb.UserPoolSummary_Lose{
-							Lose: &poolpb.UserPoolSummary_LoseOutcome{
-								AmountLost: protoPool.VerifiedMetadata.BuyIn,
-							},
-						},
-					}
-				}
-			}
-		}
-
+		// todo: Can we deprecate this?
 		if bytes.Equal(requestingUser.Value, protoPool.VerifiedMetadata.Creator.Value) {
 			fundingDestinationAccount, err := codecommon.NewAccountFromPublicKeyBytes(pool.FundingDestination.Value)
 			if err != nil {

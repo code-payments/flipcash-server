@@ -1,0 +1,151 @@
+package pool
+
+import (
+	"context"
+	"errors"
+
+	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
+	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
+
+	codedata "github.com/code-payments/code-server/pkg/code/data"
+)
+
+// todo: optimize when we don't require the entire bet list
+func GetBetSummary(ctx context.Context, pools Store, codeData codedata.Provider, pool *Pool) (*poolpb.BetSummary, []*Bet, error) {
+	bets, err := pools.GetBetsByPool(ctx, pool.ID)
+	if err != nil && err != ErrBetNotFound {
+		return nil, nil, err
+	}
+
+	var numYes, numNo int
+	for _, bet := range bets {
+		isPaid, err := bet.IsPaid(ctx, pools, codeData, pool)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if !isPaid {
+			continue
+		}
+
+		if bet.SelectedOutcome {
+			numYes++
+		} else {
+			numNo++
+		}
+	}
+
+	return &poolpb.BetSummary{
+		Kind: &poolpb.BetSummary_BooleanSummary{
+			BooleanSummary: &poolpb.BetSummary_BooleanBetSummary{
+				NumYes: uint32(numYes),
+				NumNo:  uint32(numNo),
+			},
+		},
+		TotalAmountBet: &commonpb.FiatPaymentAmount{
+			Currency:     pool.BuyInCurrency,
+			NativeAmount: float64(numYes+numNo) * pool.BuyInAmount,
+		},
+	}, bets, nil
+}
+
+func GetUserSummary(ctx context.Context, pools Store, codeData codedata.Provider, userID *commonpb.UserId, pool *Pool) (*poolpb.UserPoolSummary, error) {
+	res := &poolpb.UserPoolSummary{
+		Outcome: &poolpb.UserPoolSummary_None{},
+	}
+
+	if !pool.HasResolution() {
+		return res, nil
+	}
+
+	betSummary, _, err := GetBetSummary(ctx, pools, codeData, pool)
+	if err != nil {
+		return nil, err
+	}
+
+	return getUserSummaryWithCachedBetSummary(ctx, pools, codeData, userID, pool, betSummary)
+}
+
+// Use this method when GetBetSummary has already been called to avoid recalculation
+//
+// todo: Export this utility?
+func getUserSummaryWithCachedBetSummary(ctx context.Context, pools Store, codeData codedata.Provider, userID *commonpb.UserId, pool *Pool, betSummary *poolpb.BetSummary) (*poolpb.UserPoolSummary, error) {
+	res := &poolpb.UserPoolSummary{
+		Outcome: &poolpb.UserPoolSummary_None{},
+	}
+
+	if !pool.HasResolution() {
+		return res, nil
+	}
+
+	userBet, err := pools.GetBetByUser(ctx, pool.ID, userID)
+	if err == ErrBetNotFound {
+		return res, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	isPaid, err := userBet.IsPaid(ctx, pools, codeData, pool)
+	if err != nil {
+		return nil, err
+	} else if !isPaid {
+		return res, nil
+	}
+
+	var isUserWinner bool
+	var isUserRefunded bool
+	var numWinners, numLosers int
+	switch pool.Resolution {
+	case ResolutionRefunded:
+		isUserWinner = false
+		isUserRefunded = true
+	case ResolutionYes:
+		isUserWinner = userBet.SelectedOutcome
+		isUserRefunded = betSummary.GetBooleanSummary().NumYes == 0
+		numWinners = int(betSummary.GetBooleanSummary().NumYes)
+		numLosers = int(betSummary.GetBooleanSummary().NumNo)
+	case ResolutionNo:
+		isUserWinner = !userBet.SelectedOutcome
+		isUserRefunded = betSummary.GetBooleanSummary().NumNo == 0
+		numWinners = int(betSummary.GetBooleanSummary().NumNo)
+		numLosers = int(betSummary.GetBooleanSummary().NumYes)
+	default:
+		return nil, errors.New("unsupported resolution")
+	}
+
+	if isUserRefunded {
+		res = &poolpb.UserPoolSummary{
+			Outcome: &poolpb.UserPoolSummary_Refund{
+				Refund: &poolpb.UserPoolSummary_RefundOutcome{
+					AmountRefunded: &commonpb.FiatPaymentAmount{
+						Currency:     pool.BuyInCurrency,
+						NativeAmount: pool.BuyInAmount,
+					},
+				},
+			},
+		}
+	} else if isUserWinner {
+		res = &poolpb.UserPoolSummary{
+			Outcome: &poolpb.UserPoolSummary_Win{
+				Win: &poolpb.UserPoolSummary_WinOutcome{
+					AmountWon: &commonpb.FiatPaymentAmount{
+						Currency:     pool.BuyInCurrency,
+						NativeAmount: (float64(numWinners+numLosers) * pool.BuyInAmount) / float64(numWinners),
+					},
+				},
+			},
+		}
+	} else {
+		res = &poolpb.UserPoolSummary{
+			Outcome: &poolpb.UserPoolSummary_Lose{
+				Lose: &poolpb.UserPoolSummary_LoseOutcome{
+					AmountLost: &commonpb.FiatPaymentAmount{
+						Currency:     pool.BuyInCurrency,
+						NativeAmount: pool.BuyInAmount,
+					},
+				},
+			},
+		}
+	}
+	return res, nil
+}
