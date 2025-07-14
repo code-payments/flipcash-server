@@ -24,6 +24,7 @@ import (
 	"github.com/code-payments/flipcash-server/model"
 	"github.com/code-payments/flipcash-server/pool"
 	"github.com/code-payments/flipcash-server/protoutil"
+	push "github.com/code-payments/flipcash-server/push"
 )
 
 // todo: Add tests around more edge case result codes and flows
@@ -50,7 +51,7 @@ func testServer_PoolManagement_HappyPath(t *testing.T, accounts account.Store, p
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
 	codeData := codedata.NewTestDataProvider()
-	server := pool.NewServer(log, authz, accounts, pools, codeData)
+	server := pool.NewServer(log, authz, accounts, pools, codeData, push.NewNoOpPusher())
 	codetestutil.SetupRandomSubsidizer(t, codeData)
 
 	creatorKey := model.MustGenerateKeyPair()
@@ -140,7 +141,7 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
 	codeData := codedata.NewTestDataProvider()
-	server := pool.NewServer(log, authz, accounts, pools, codeData)
+	server := pool.NewServer(log, authz, accounts, pools, codeData, push.NewNoOpPusher())
 	codetestutil.SetupRandomSubsidizer(t, codeData)
 
 	creatorKey := model.MustGenerateKeyPair()
@@ -273,7 +274,7 @@ func testServer_Membership_HappyPath(t *testing.T, accounts account.Store, pools
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
 	codeData := codedata.NewTestDataProvider()
-	server := pool.NewServer(log, authz, accounts, pools, codeData)
+	server := pool.NewServer(log, authz, accounts, pools, codeData, push.NewNoOpPusher())
 	codetestutil.SetupRandomSubsidizer(t, codeData)
 
 	creatorKey := model.MustGenerateKeyPair()

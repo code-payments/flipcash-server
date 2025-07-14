@@ -19,6 +19,10 @@ func (n *NoOpPusher) SendBasicPushes(_ context.Context, _, _ string, _ ...*commo
 	return nil
 }
 
+func NewNoOpPusher() Pusher {
+	return &NoOpPusher{}
+}
+
 type FCMPusher struct {
 	log    *zap.Logger
 	tokens TokenStore

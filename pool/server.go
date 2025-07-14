@@ -20,6 +20,7 @@ import (
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/model"
+	"github.com/code-payments/flipcash-server/push"
 )
 
 const (
@@ -29,22 +30,27 @@ const (
 )
 
 type Server struct {
-	log      *zap.Logger
-	auth     auth.Authorizer
+	log *zap.Logger
+
+	auth auth.Authorizer
+
 	accounts account.Store
 	pools    Store
 	codeData codedata.Provider
 
+	pusher push.Pusher
+
 	poolpb.UnimplementedPoolServer
 }
 
-func NewServer(log *zap.Logger, auth auth.Authorizer, accounts account.Store, pools Store, codeData codedata.Provider) *Server {
+func NewServer(log *zap.Logger, auth auth.Authorizer, accounts account.Store, pools Store, codeData codedata.Provider, pusher push.Pusher) *Server {
 	return &Server{
 		log:      log,
 		auth:     auth,
 		accounts: accounts,
 		pools:    pools,
 		codeData: codeData,
+		pusher:   pusher,
 	}
 }
 
@@ -355,7 +361,54 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 		return nil, status.Error(codes.Internal, "failure persisting pool resolution")
 	}
 
+	go func() {
+		err = s.notifyPoolResolution(context.Background(), pool.ID)
+		if err != nil {
+			log.With(zap.Error(err)).Warn("Failed to notify pool resolution")
+		}
+	}()
+
 	return &poolpb.ResolvePoolResponse{}, nil
+}
+
+func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId) error {
+	pool, err := s.pools.GetPoolByID(ctx, poolID)
+	if err != nil {
+		return err
+	}
+
+	betSummary, bets, err := GetBetSummary(ctx, s.pools, s.codeData, pool)
+	if err != nil {
+		return err
+	}
+
+	var winners []*commonpb.UserId
+	var losers []*commonpb.UserId
+	var ammountWon *commonpb.FiatPaymentAmount
+	var ammountLost *commonpb.FiatPaymentAmount
+	for _, bet := range bets {
+		userSummary, err := getUserSummaryWithCachedBetSummary(ctx, s.pools, s.codeData, bet.UserID, pool, betSummary)
+		if err != nil {
+			return err
+		}
+		switch typed := userSummary.Outcome.(type) {
+		case *poolpb.UserPoolSummary_Win:
+			winners = append(winners, bet.UserID)
+			ammountWon = typed.Win.AmountWon
+		case *poolpb.UserPoolSummary_Lose:
+			losers = append(losers, bet.UserID)
+			ammountLost = typed.Lose.AmountLost
+		}
+	}
+
+	if len(winners) > 0 {
+		go push.SendWinBettingPoolPushes(ctx, s.pusher, pool.Name, ammountWon, winners...)
+	}
+	if len(losers) > 0 {
+		go push.SendLostBettingPoolPushes(ctx, s.pusher, pool.Name, ammountLost, losers...)
+	}
+
+	return nil
 }
 
 func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*poolpb.MakeBetResponse, error) {
