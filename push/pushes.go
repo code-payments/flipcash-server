@@ -26,6 +26,9 @@ func SendDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.
 }
 
 func SendWinBettingPoolPushes(ctx context.Context, pusher Pusher, poolName string, amountWon *commonpb.FiatPaymentAmount, winners ...*commonpb.UserId) error {
+	if amountWon.NativeAmount < 0.01 {
+		return nil
+	}
 	title := "You won 🎉"
 	localizedNativeAmount, err := localization.FormatFiat(defaultLocale, codecurrency.Code(amountWon.Currency), amountWon.NativeAmount)
 	if err != nil {
