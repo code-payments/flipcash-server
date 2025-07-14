@@ -138,7 +138,7 @@ func (i *Integration) validateBettingPoolDistribution(ctx context.Context, inten
 
 	var paidBets []*pool.Bet
 	for _, bet := range bets {
-		isPaid, err := bet.IsPaid(ctx, i.codeData, i.pools, bettingPool)
+		isPaid, err := bet.IsPaid(ctx, i.pools, i.codeData, bettingPool)
 		if err != nil {
 			return err
 		}
