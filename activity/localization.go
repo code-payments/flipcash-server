@@ -32,7 +32,7 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 	case *activitypb.Notification_PaidUsdc:
 		switch typed.PaidUsdc.PaymentMetadata.(type) {
 		case *activitypb.PaidUsdcNotificationMetadata_Pool:
-			localizedText = "Paid into Pool"
+			localizedText = "Paid into pool"
 		default:
 			return errors.New("unsupported paid usdc payment metadata type")
 		}
@@ -41,10 +41,8 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 		switch typed2 := typed.DistributedUsdc.DistributionMetadata.(type) {
 		case *activitypb.DistributedUsdcNotificationMetadata_Pool:
 			switch typed2.Pool.Outcome {
-			case poolpb.UserOutcome_WIN_OUTCOME:
-				localizedText = "Won from Pool"
-			case poolpb.UserOutcome_REFUND_OUTCOME:
-				localizedText = "Refund from Pool"
+			case poolpb.UserOutcome_WIN_OUTCOME, poolpb.UserOutcome_REFUND_OUTCOME:
+				localizedText = "Received from pool"
 			default:
 				return errors.New("unsupported distributed usdc pool outcome")
 			}

@@ -362,7 +362,7 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				nativeAmount = typed.Refund.AmountRefunded.NativeAmount
 			case *poolpb.UserPoolSummary_Win:
 				userOutcome = poolpb.UserOutcome_WIN_OUTCOME
-				nativeAmount = typed.Win.AmountWon.NativeAmount
+				nativeAmount = typed.Win.TotalAmountReceived.NativeAmount
 			default:
 				return nil, errors.New("unexpected user pool outcome")
 			}

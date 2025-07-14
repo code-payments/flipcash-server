@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"errors"
+	"math"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
@@ -125,12 +126,18 @@ func getUserSummaryWithCachedBetSummary(ctx context.Context, pools Store, codeDa
 			},
 		}
 	} else if isUserWinner {
+		totalAmountReceived := (float64(numWinners+numLosers) * pool.BuyInAmount) / float64(numWinners)
+		amountWon := math.Max(totalAmountReceived-pool.BuyInAmount, 0)
 		res = &poolpb.UserPoolSummary{
 			Outcome: &poolpb.UserPoolSummary_Win{
 				Win: &poolpb.UserPoolSummary_WinOutcome{
 					AmountWon: &commonpb.FiatPaymentAmount{
 						Currency:     pool.BuyInCurrency,
-						NativeAmount: (float64(numWinners+numLosers) * pool.BuyInAmount) / float64(numWinners),
+						NativeAmount: amountWon,
+					},
+					TotalAmountReceived: &commonpb.FiatPaymentAmount{
+						Currency:     pool.BuyInCurrency,
+						NativeAmount: totalAmountReceived,
 					},
 				},
 			},
