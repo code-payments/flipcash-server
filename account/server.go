@@ -14,10 +14,15 @@ import (
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 
 	"github.com/code-payments/flipcash-server/auth"
+	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/model"
 )
 
-const loginWindow = 2 * time.Minute
+// todo: env configs
+const (
+	loginWindow                 = 2 * time.Minute
+	requireIapOnAccountCreation = false
+)
 
 type Server struct {
 	log      *zap.Logger
@@ -56,7 +61,18 @@ func (s *Server) Register(ctx context.Context, req *accountpb.RegisterRequest) (
 		return nil, status.Error(codes.Internal, "failed to generate user id")
 	}
 
-	prev, err := s.store.Bind(ctx, userID, req.PublicKey)
+	var prev *commonpb.UserId
+	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
+		prev, err = s.store.Bind(ctx, userID, req.PublicKey)
+		if err != nil {
+			return err
+		}
+
+		if !requireIapOnAccountCreation {
+			return s.store.SetRegistrationFlag(ctx, prev, true)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, status.Error(codes.Internal, "")
 	}
@@ -138,8 +154,9 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 	return &accountpb.GetUserFlagsResponse{
 		Result: accountpb.GetUserFlagsResponse_OK,
 		UserFlags: &accountpb.UserFlags{
-			IsStaff:             isStaff,
-			IsRegisteredAccount: isRegistered,
+			IsStaff:                    isStaff,
+			IsRegisteredAccount:        isRegistered,
+			RequiresIapForRegistration: requireIapOnAccountCreation,
 		},
 	}, nil
 }

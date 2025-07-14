@@ -73,6 +73,10 @@ func testServer(t *testing.T, store account.Store) {
 			} else {
 				require.NoError(t, protoutil.ProtoEqualError(userId, resp.UserId))
 			}
+
+			isRegistered, err := store.IsRegistered(ctx, userId)
+			require.NoError(t, err)
+			require.True(t, isRegistered)
 		}
 	})
 
