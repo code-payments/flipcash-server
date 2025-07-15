@@ -20,6 +20,7 @@ import (
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/database"
 	"github.com/code-payments/flipcash-server/model"
+	"github.com/code-payments/flipcash-server/profile"
 	"github.com/code-payments/flipcash-server/push"
 )
 
@@ -36,6 +37,7 @@ type Server struct {
 
 	accounts account.Store
 	pools    Store
+	profiles profile.Store
 	codeData codedata.Provider
 
 	pusher push.Pusher
@@ -43,14 +45,18 @@ type Server struct {
 	poolpb.UnimplementedPoolServer
 }
 
-func NewServer(log *zap.Logger, auth auth.Authorizer, accounts account.Store, pools Store, codeData codedata.Provider, pusher push.Pusher) *Server {
+func NewServer(log *zap.Logger, auth auth.Authorizer, accounts account.Store, pools Store, profiles profile.Store, codeData codedata.Provider, pusher push.Pusher) *Server {
 	return &Server{
-		log:      log,
-		auth:     auth,
+		log: log,
+
+		auth: auth,
+
 		accounts: accounts,
 		pools:    pools,
+		profiles: profiles,
 		codeData: codeData,
-		pusher:   pusher,
+
+		pusher: pusher,
 	}
 }
 
@@ -172,7 +178,7 @@ func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*pool
 		log = log.With(zap.String("user_id", model.UserIDString(userID)))
 	}
 
-	protoPool, err := s.getProtoPool(ctx, req.Id, userID, !req.ExcludeBets)
+	protoPool, err := s.getProtoPool(ctx, req.Id, userID, !req.ExcludeBets, req.IncludeUserProfiles)
 	if err == ErrPoolNotFound {
 		return &poolpb.GetPoolResponse{Result: poolpb.GetPoolResponse_NOT_FOUND}, nil
 	} else if err != nil {
@@ -225,7 +231,7 @@ func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsReq
 	for i, membership := range memberships {
 		log := log.With(zap.String("pool_id", PoolIDString(membership.PoolID)))
 
-		protoPool, err := s.getProtoPool(ctx, membership.PoolID, userID, true)
+		protoPool, err := s.getProtoPool(ctx, membership.PoolID, userID, false, false)
 		if err != nil {
 			log.With(zap.Error(err)).Warn("Failure getting pool with bets")
 			return nil, status.Error(codes.Internal, "failure getting pool with bets")
@@ -543,7 +549,13 @@ func (s *Server) validateBetPayoutDestination(ctx context.Context, owner, payout
 	}
 }
 
-func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, requestingUser *commonpb.UserId, includeBets bool) (*poolpb.PoolMetadata, error) {
+func (s *Server) getProtoPool(
+	ctx context.Context,
+	id *poolpb.PoolId,
+	requestingUser *commonpb.UserId,
+	includeBets bool,
+	includeUserProfiles bool,
+) (*poolpb.PoolMetadata, error) {
 	pool, err := s.pools.GetPoolByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -551,6 +563,12 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, requesting
 
 	protoPool := pool.ToProto()
 	protoPool.IsFundingDestinationInitialized = true
+	if includeUserProfiles {
+		protoPool.CreatorProfile, err = s.profiles.GetProfile(ctx, protoPool.VerifiedMetadata.Creator)
+		if err != nil && err != profile.ErrNotFound {
+			return nil, err
+		}
+	}
 
 	betSummary, bets, err := GetBetSummary(ctx, s.pools, s.codeData, pool)
 	if err != nil {
@@ -563,6 +581,13 @@ func (s *Server) getProtoPool(ctx context.Context, id *poolpb.PoolId, requesting
 		for i, bet := range bets {
 			protoPool.Bets[i] = bet.ToProto()
 			protoPool.Bets[i].IsIntentSubmitted = bet.IsIntentSubmitted
+
+			if includeUserProfiles {
+				protoPool.Bets[i].BetterProfile, err = s.profiles.GetProfile(ctx, protoPool.Bets[i].VerifiedMetadata.UserId)
+				if err != nil && err != profile.ErrNotFound {
+					return nil, err
+				}
+			}
 		}
 	}
 

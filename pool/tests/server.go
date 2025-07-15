@@ -23,6 +23,7 @@ import (
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/model"
 	"github.com/code-payments/flipcash-server/pool"
+	"github.com/code-payments/flipcash-server/profile"
 	"github.com/code-payments/flipcash-server/protoutil"
 	push "github.com/code-payments/flipcash-server/push"
 )
@@ -31,27 +32,28 @@ import (
 // todo: Add tests around signature verification
 // todo: Add tests around verified bet payments
 // todo: Add tests for user summaries
+// todo: Add tests for user profiles
 // todo: Add more test for paging APIs, but those are well covered in store tests
 
-func RunServerTests(t *testing.T, accounts account.Store, pools pool.Store, teardown func()) {
-	for _, tf := range []func(t *testing.T, accounts account.Store, pools pool.Store){
+func RunServerTests(t *testing.T, accounts account.Store, pools pool.Store, profiles profile.Store, teardown func()) {
+	for _, tf := range []func(t *testing.T, accounts account.Store, pools pool.Store, profiles profile.Store){
 		testServer_PoolManagement_HappyPath,
 		testServer_Betting_HappyPath,
 		testServer_Membership_HappyPath,
 	} {
-		tf(t, accounts, pools)
+		tf(t, accounts, pools, profiles)
 		teardown()
 	}
 }
 
-func testServer_PoolManagement_HappyPath(t *testing.T, accounts account.Store, pools pool.Store) {
+func testServer_PoolManagement_HappyPath(t *testing.T, accounts account.Store, pools pool.Store, profiles profile.Store) {
 	ctx := context.Background()
 	log := zaptest.NewLogger(t)
 
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
 	codeData := codedata.NewTestDataProvider()
-	server := pool.NewServer(log, authz, accounts, pools, codeData, push.NewNoOpPusher())
+	server := pool.NewServer(log, authz, accounts, pools, profiles, codeData, push.NewNoOpPusher())
 	codetestutil.SetupRandomSubsidizer(t, codeData)
 
 	creatorKey := model.MustGenerateKeyPair()
@@ -134,14 +136,14 @@ func testServer_PoolManagement_HappyPath(t *testing.T, accounts account.Store, p
 	require.EqualValues(t, 0, getResp.Pool.DerivationIndex)
 }
 
-func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools pool.Store) {
+func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools pool.Store, profiles profile.Store) {
 	ctx := context.Background()
 	log := zaptest.NewLogger(t)
 
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
 	codeData := codedata.NewTestDataProvider()
-	server := pool.NewServer(log, authz, accounts, pools, codeData, push.NewNoOpPusher())
+	server := pool.NewServer(log, authz, accounts, pools, profiles, codeData, push.NewNoOpPusher())
 	codetestutil.SetupRandomSubsidizer(t, codeData)
 
 	creatorKey := model.MustGenerateKeyPair()
@@ -267,14 +269,14 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 	require.Len(t, getPoolResp.Pool.Bets, len(expectedBets))
 }
 
-func testServer_Membership_HappyPath(t *testing.T, accounts account.Store, pools pool.Store) {
+func testServer_Membership_HappyPath(t *testing.T, accounts account.Store, pools pool.Store, profiles profile.Store) {
 	ctx := context.Background()
 	log := zaptest.NewLogger(t)
 
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
 	codeData := codedata.NewTestDataProvider()
-	server := pool.NewServer(log, authz, accounts, pools, codeData, push.NewNoOpPusher())
+	server := pool.NewServer(log, authz, accounts, pools, profiles, codeData, push.NewNoOpPusher())
 	codetestutil.SetupRandomSubsidizer(t, codeData)
 
 	creatorKey := model.MustGenerateKeyPair()

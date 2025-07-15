@@ -31,21 +31,24 @@ func (m *InMemoryStore) GetProfile(_ context.Context, id *commonpb.UserId) (*pro
 	m.Lock()
 	defer m.Unlock()
 
-	baseProfile, ok := m.profiles[userIDCacheKey(id)]
-	if !ok {
-		return nil, profile.ErrNotFound
+	baseProfile, hasBaseProfile := m.profiles[userIDCacheKey(id)]
+	clonedBaseProfile := &profilepb.UserProfile{}
+	if hasBaseProfile {
+		clonedBaseProfile = proto.Clone(baseProfile).(*profilepb.UserProfile)
 	}
 
-	clonedBaseProfile := proto.Clone(baseProfile).(*profilepb.UserProfile)
-
-	xProfile, ok := m.xProfilesByUser[userIDCacheKey(id)]
-	if ok {
+	xProfile, hasXProfile := m.xProfilesByUser[userIDCacheKey(id)]
+	if hasXProfile {
 		clonedXProfile := proto.Clone(xProfile).(*profilepb.XProfile)
 		clonedBaseProfile.SocialProfiles = append(clonedBaseProfile.SocialProfiles, &profilepb.SocialProfile{
 			Type: &profilepb.SocialProfile_X{
 				X: clonedXProfile,
 			},
 		})
+	}
+
+	if !hasBaseProfile && !hasXProfile {
+		return nil, profile.ErrNotFound
 	}
 
 	return clonedBaseProfile, nil

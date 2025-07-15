@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/code-payments/code-server/pkg/pointer"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	profilepb "github.com/code-payments/flipcash-protobuf-api/generated/go/profile/v1"
 
@@ -25,12 +26,10 @@ func (s *store) GetProfile(ctx context.Context, id *commonpb.UserId) (*profilepb
 	displayName, err := dbGetDisplayName(ctx, s.pool, id)
 	if err != nil {
 		return nil, err
-	} else if displayName == nil {
-		return nil, profile.ErrNotFound
 	}
 
 	userProfile := &profilepb.UserProfile{
-		DisplayName: *displayName,
+		DisplayName: *pointer.StringOrDefault(displayName, ""),
 	}
 
 	xProfileModel, err := dbGetXProfile(ctx, s.pool, id)
@@ -49,6 +48,9 @@ func (s *store) GetProfile(ctx context.Context, id *commonpb.UserId) (*profilepb
 		return nil, err
 	}
 
+	if len(userProfile.DisplayName) == 0 && len(userProfile.SocialProfiles) == 0 {
+		return nil, profile.ErrNotFound
+	}
 	return userProfile, nil
 }
 
