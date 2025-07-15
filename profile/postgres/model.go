@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/georgysavva/scany/v2/pgxscan"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
@@ -83,45 +84,51 @@ func dbGetDisplayName(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.
 }
 
 func dbSetDisplayName(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, displayName string) error {
-	query := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, $2, FALSE, FALSE, NOW(), NOW()) ON CONFLICT ("id") DO UPDATE SET "displayName" = $2 WHERE ` + usersTableName + `."id" = $1`
-	_, err := pool.Exec(ctx, query, pg.Encode(userID.Value), displayName)
-	return err
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		query := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, $2, FALSE, FALSE, NOW(), NOW()) ON CONFLICT ("id") DO UPDATE SET "displayName" = $2 WHERE ` + usersTableName + `."id" = $1`
+		_, err := tx.Exec(ctx, query, pg.Encode(userID.Value), displayName)
+		return err
+	})
 }
 
 func (m *xProfileModel) dbUpsert(ctx context.Context, pool *pgxpool.Pool) error {
-	query := `INSERT INTO ` + xProfilesTableName + ` (` + allXUserFields + `) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-		ON CONFLICT ("id") DO UPDATE
-			SET "username" = $2, "name" = $3, "description" = $4, "profilePicUrl" = $5, "followerCount" = $6, "verifiedType" = $7, "accessToken" = $8, "userId" = $9, "updatedAt" = NOW()
-			WHERE ` + xProfilesTableName + `."id" = $1
-		RETURNING ` + allXUserFields
-	err := pgxscan.Get(
-		ctx,
-		pool,
-		m,
-		query,
-		m.ID,
-		m.Username,
-		m.Name,
-		m.Description,
-		m.ProfilePicUrl,
-		m.FollowerCount,
-		m.VerifiedType,
-		m.AccessToken,
-		m.UserID,
-	)
-	return err
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		query := `INSERT INTO ` + xProfilesTableName + ` (` + allXUserFields + `) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+			ON CONFLICT ("id") DO UPDATE
+				SET "username" = $2, "name" = $3, "description" = $4, "profilePicUrl" = $5, "followerCount" = $6, "verifiedType" = $7, "accessToken" = $8, "userId" = $9, "updatedAt" = NOW()
+				WHERE ` + xProfilesTableName + `."id" = $1
+			RETURNING ` + allXUserFields
+		err := pgxscan.Get(
+			ctx,
+			tx,
+			m,
+			query,
+			m.ID,
+			m.Username,
+			m.Name,
+			m.Description,
+			m.ProfilePicUrl,
+			m.FollowerCount,
+			m.VerifiedType,
+			m.AccessToken,
+			m.UserID,
+		)
+		return err
+	})
 }
 
 func dbUnlinkXAccount(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, xUserID string) error {
-	query := `DELETE FROM ` + xProfilesTableName + ` WHERE "id" = $1 AND "userId" = $2`
-	res, err := pool.Exec(ctx, query, xUserID, pg.Encode(userID.Value))
-	if err != nil {
-		return err
-	}
-	if res.RowsAffected() == 0 {
-		return profile.ErrNotFound
-	}
-	return nil
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		query := `DELETE FROM ` + xProfilesTableName + ` WHERE "id" = $1 AND "userId" = $2`
+		res, err := tx.Exec(ctx, query, xUserID, pg.Encode(userID.Value))
+		if err != nil {
+			return err
+		}
+		if res.RowsAffected() == 0 {
+			return profile.ErrNotFound
+		}
+		return nil
+	})
 }
 
 func dbGetXProfile(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId) (*xProfileModel, error) {
