@@ -7,7 +7,7 @@ require (
 	github.com/ReneKroon/ttlcache v1.7.0
 	github.com/code-payments/code-protobuf-api v1.19.1-0.20250704193024-5320c0a4c394
 	github.com/code-payments/code-server v1.10.21-0.20250709133017-8d09996a5182
-	github.com/code-payments/flipcash-protobuf-api v1.4.22
+	github.com/code-payments/flipcash-protobuf-api v1.5.0
 	github.com/devsisters/go-applereceipt v0.0.0-20240805020915-fa22a0160fc2
 	github.com/georgysavva/scany/v2 v2.1.4
 	github.com/google/uuid v1.6.0
