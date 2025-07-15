@@ -135,7 +135,7 @@ var symbolByCurrency = map[codecurrency.Code]string{
 }
 
 // FormatFiat formats a currency amount into a string in the provided locale
-func FormatFiat(locale language.Tag, currency codecurrency.Code, amount float64) (string, error) {
+func FormatFiat(locale language.Tag, currency codecurrency.Code, amount float64) string {
 	isRtlScript := isRtlScript(locale)
 
 	decimals := 2
@@ -147,7 +147,7 @@ func FormatFiat(locale language.Tag, currency codecurrency.Code, amount float64)
 	symbol := symbolByCurrency[currency]
 
 	if isRtlScript {
-		return formattedAmount + symbol, nil
+		return formattedAmount + symbol
 	}
-	return symbol + formattedAmount, nil
+	return symbol + formattedAmount
 }

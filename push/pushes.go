@@ -34,20 +34,20 @@ func SendWinBettingPoolPushes(ctx context.Context, pusher Pusher, poolName strin
 		return nil
 	}
 	title := fmt.Sprintf("You won %s", betWinEmojis[rand.IntN(len(betWinEmojis))])
-	localizedNativeAmount, err := localization.FormatFiat(defaultLocale, codecurrency.Code(amountWon.Currency), amountWon.NativeAmount)
-	if err != nil {
-		return err
-	}
-	body := fmt.Sprintf(`You won %s on '%s'`, localizedNativeAmount, poolName)
+	body := fmt.Sprintf(
+		`You won %s on '%s'`,
+		localization.FormatFiat(defaultLocale, codecurrency.Code(amountWon.Currency), amountWon.NativeAmount),
+		poolName,
+	)
 	return pusher.SendBasicPushes(ctx, title, body, winners...)
 }
 
 func SendLostBettingPoolPushes(ctx context.Context, pusher Pusher, poolName string, amountLost *commonpb.FiatPaymentAmount, losers ...*commonpb.UserId) error {
 	title := fmt.Sprintf("You lost %s", betLostEmojis[rand.IntN(len(betLostEmojis))])
-	localizedNativeAmount, err := localization.FormatFiat(defaultLocale, codecurrency.Code(amountLost.Currency), amountLost.NativeAmount)
-	if err != nil {
-		return err
-	}
-	body := fmt.Sprintf(`You lost %s on '%s'`, localizedNativeAmount, poolName)
+	body := fmt.Sprintf(
+		`You lost %s on '%s'`,
+		localization.FormatFiat(defaultLocale, codecurrency.Code(amountLost.Currency), amountLost.NativeAmount),
+		poolName,
+	)
 	return pusher.SendBasicPushes(ctx, title, body, losers...)
 }
