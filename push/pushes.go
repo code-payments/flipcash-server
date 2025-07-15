@@ -3,6 +3,7 @@ package push
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 
 	"golang.org/x/text/language"
 	"golang.org/x/text/message"
@@ -17,6 +18,9 @@ import (
 var (
 	defaultLocale     = language.English
 	usdcAmountPrinter = message.NewPrinter(defaultLocale)
+
+	betWinEmojis  = []string{"😎", "🤠", "🙌", "🤌", "🔥", "😝", "😏", "🥳", "🫨", "😤", "🙀", "👐", "🤘", "💪", "👀", "🕺", "💃", "🍻", "🥂", "🏋️", "🤸‍♀️", "🤾‍♂️", "🏆", "🥇", "🎯", "🎉", "📈", "🥷", "🧙‍♂️", "👑", "🎯", "🔈", "🏁"}
+	betLostEmojis = []string{"😅", "🙃", "😭", "😳", "😱", "🫣", "🫥", "😬", "🙄", "🥴", "🤓", "💩", "☠️", "✌️", "🤦‍♂️", "🤦‍♀️", "🤷‍♀️", "🤷", "💆‍♂️", "🙈", "🙊", "🦨", "☔️", "🥃", "🥊", "🎭", "🚑", "🚬", "🪠", "🚽", "🃏", "🏴‍☠️", "📉"}
 )
 
 func SendDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, quarks uint64) error {
@@ -29,7 +33,7 @@ func SendWinBettingPoolPushes(ctx context.Context, pusher Pusher, poolName strin
 	if amountWon.NativeAmount < 0.01 {
 		return nil
 	}
-	title := "You won 🎉"
+	title := fmt.Sprintf("You won %s", betWinEmojis[rand.IntN(len(betWinEmojis))])
 	localizedNativeAmount, err := localization.FormatFiat(defaultLocale, codecurrency.Code(amountWon.Currency), amountWon.NativeAmount)
 	if err != nil {
 		return err
@@ -39,7 +43,7 @@ func SendWinBettingPoolPushes(ctx context.Context, pusher Pusher, poolName strin
 }
 
 func SendLostBettingPoolPushes(ctx context.Context, pusher Pusher, poolName string, amountLost *commonpb.FiatPaymentAmount, losers ...*commonpb.UserId) error {
-	title := "You lost 😭"
+	title := fmt.Sprintf("You lost %s", betLostEmojis[rand.IntN(len(betLostEmojis))])
 	localizedNativeAmount, err := localization.FormatFiat(defaultLocale, codecurrency.Code(amountLost.Currency), amountLost.NativeAmount)
 	if err != nil {
 		return err
