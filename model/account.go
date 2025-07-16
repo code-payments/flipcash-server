@@ -29,11 +29,13 @@ func GenerateUserId() (*commonpb.UserId, error) {
 }
 
 func UserIDString(userID *commonpb.UserId) string {
+	if userID == nil {
+		return "<nil>"
+	}
 	id, err := uuid.FromBytes(userID.GetValue())
 	if err != nil {
-		return fmt.Sprintf("invalid (%v)", err)
+		return fmt.Sprintf("<invalid: %v>", err)
 	}
-
 	return id.String()
 }
 

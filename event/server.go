@@ -1,10 +1,12 @@
 package event
 
 import (
+	"context"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -16,48 +18,82 @@ import (
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	eventpb "github.com/code-payments/flipcash-protobuf-api/generated/go/event/v1"
 
+	codeheaders "github.com/code-payments/code-server/pkg/grpc/headers"
+	coderetry "github.com/code-payments/code-server/pkg/retry"
+	codebackoff "github.com/code-payments/code-server/pkg/retry/backoff"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/model"
 	"github.com/code-payments/flipcash-server/protoutil"
 )
 
 const (
-	streamBufferSize = 64
-	streamPingDelay  = 5 * time.Second
-	streamTimeout    = time.Second
-
 	maxEventBatchSize = 1024
+
+	streamBufferSize   = 64
+	streamPingDelay    = 5 * time.Second
+	streamTimeout      = time.Second
+	streamInitTsWindow = 2 * time.Minute
+
+	rendezvousExpiryTime      = 3 * time.Second
+	rendezvousRefreshInterval = 2 * time.Second
+
+	forwardRpcTimeout = 250 * time.Millisecond
+
+	internalRpcApiKeyHeaderName = "x-flipcash-internal-rpc-api-key"
 )
 
-// todo: requires distributed implementation
 type Server struct {
 	log *zap.Logger
 
 	authz auth.Authorizer
 
+	events Store
+
 	eventBus *Bus[*commonpb.UserId, *eventpb.Event]
 
-	streamsMu sync.RWMutex
-	streams   map[string]Stream[[]*eventpb.Event]
+	streamsMu          sync.RWMutex
+	individualStreamMu map[string]*sync.Mutex
+	streams            map[string]Stream[[]*eventpb.Event]
+
+	broadcastAddress      string
+	allInternalRpcApiKeys map[string]any
+	currentRpcApiKey      string
 
 	eventpb.UnimplementedEventStreamingServer
 }
 
-func NewServer(log *zap.Logger, authz auth.Authorizer, eventBus *Bus[*commonpb.UserId, *eventpb.Event]) *Server {
+func NewServer(
+	log *zap.Logger,
+	authz auth.Authorizer,
+	events Store,
+	eventBus *Bus[*commonpb.UserId, *eventpb.Event],
+	broadcastAddress string,
+	currentRpcApiKey string,
+) *Server {
 	s := &Server{
 		log: log,
 
 		authz: authz,
 
+		events: events,
+
 		eventBus: eventBus,
+
+		individualStreamMu: make(map[string]*sync.Mutex),
+		streams:            make(map[string]Stream[[]*eventpb.Event]),
+
+		broadcastAddress:      broadcastAddress,
+		currentRpcApiKey:      currentRpcApiKey,
+		allInternalRpcApiKeys: make(map[string]any),
 	}
+
+	s.allInternalRpcApiKeys[currentRpcApiKey] = true
 
 	eventBus.AddHandler(HandlerFunc[*commonpb.UserId, *eventpb.Event](s.OnEvent))
 
 	return s
 }
 
-// todo: must be upgraded for a distributed environment
 func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEventsRequest, eventpb.StreamEventsResponse]) error {
 	ctx := stream.Context()
 
@@ -73,6 +109,13 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 	params := req.GetParams()
 	if req.GetParams() == nil {
 		return status.Error(codes.InvalidArgument, "missing parameters")
+	}
+
+	t := params.Ts.AsTime()
+	if t.After(time.Now().Add(streamInitTsWindow)) || t.Before(time.Now().Add(-streamInitTsWindow)) {
+		return stream.Send(&eventpb.StreamEventsResponse{Type: &eventpb.StreamEventsResponse_Error{
+			Error: &eventpb.StreamEventsResponse_StreamError{Code: eventpb.StreamEventsResponse_StreamError_INVALID_TIMESTAMP},
+		}})
 	}
 
 	userID, err := s.authz.Authorize(ctx, params, &params.Auth)
@@ -113,12 +156,24 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 			}
 
 			cloned := protoutil.SliceClone(events)
+			for _, event := range events {
+				log.With(zap.String("event_id", EventIDString(event.Id))).Debug("Sending event to client in batch")
+			}
 			return &eventpb.EventBatch{Events: cloned}, true
 		},
 	)
 
 	s.streams[streamKey] = ss
+
+	myStreamMu, ok := s.individualStreamMu[streamKey]
+	if !ok {
+		myStreamMu = &sync.Mutex{}
+		s.individualStreamMu[streamKey] = myStreamMu
+	}
+
 	s.streamsMu.Unlock()
+
+	myStreamMu.Lock()
 
 	defer func() {
 		s.streamsMu.Lock()
@@ -134,8 +189,42 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 		}
 
 		s.streamsMu.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		err := s.events.DeleteRendezvous(ctx, streamKey, s.broadcastAddress)
+		if err != nil {
+			log.With(zap.Error(err)).Warn("Failed to cleanup rendezvous record")
+		}
+		cancel()
+
+		myStreamMu.Unlock()
 	}()
 
+	// Sanity check whether the stream is still valid before doing expensive operations
+	select {
+	case <-ctx.Done():
+		log.Debug("Stream context cancelled; ending stream")
+		return status.Error(codes.Canceled, "")
+	default:
+	}
+
+	// Let other RPC servers know where to find the active stream via a rendezvous
+	// record
+	rendezvous := &Rendezvous{
+		Key:       streamKey,
+		Address:   s.broadcastAddress,
+		ExpiresAt: time.Now().Add(rendezvousExpiryTime),
+	}
+	err = s.events.CreateRendezvous(ctx, rendezvous)
+	if err == ErrRendezvousExists {
+		log.Warn("Existing stream detected on another server aborting")
+		return status.Error(codes.Aborted, "stream already exists")
+	} else if err != nil {
+		log.With(zap.Error(err)).Warn("Failure saving rendezvous record")
+		return status.Error(codes.Internal, "failure saving rendezvous record")
+	}
+
+	updateRendezvousCh := time.After(rendezvousRefreshInterval)
 	sendPingCh := time.After(0)
 	streamHealthCh := protoutil.MonitorStreamHealth(ctx, log, stream, func(t *eventpb.StreamEventsRequest) bool {
 		return t.GetPong() != nil
@@ -149,16 +238,31 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 				return status.Error(codes.Aborted, "stream closed")
 			}
 
-			log.Debug("Forwarding events")
+			log.Debug("Sending events to client")
 			err = stream.Send(&eventpb.StreamEventsResponse{
 				Type: &eventpb.StreamEventsResponse_Events{
 					Events: batch,
 				},
 			})
 			if err != nil {
-				log.Info("Failed to forward chat update", zap.Error(err))
+				log.Info("Failed to send events to client", zap.Error(err))
 				return err
 			}
+		case <-updateRendezvousCh:
+			log.Debug("Refreshing rendezvous record")
+
+			expiry := time.Now().Add(rendezvousExpiryTime)
+
+			err = s.events.ExtendRendezvousExpiry(ctx, streamKey, s.broadcastAddress, expiry)
+			if err == ErrRendezvousNotFound {
+				log.Warn("Existing stream detected on another server aborting")
+				return status.Error(codes.Aborted, "stream already exists")
+			} else if err != nil {
+				log.With(zap.Error(err)).Warn("Failure extending rendezvous record expiry")
+				return status.Error(codes.Internal, "failure extending rendezvous record expiry")
+			}
+
+			updateRendezvousCh = time.After(rendezvousRefreshInterval)
 		case <-sendPingCh:
 			log.Debug("Sending ping to client")
 
@@ -186,16 +290,127 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 	}
 }
 
-func (s *Server) OnEvent(userID *commonpb.UserId, e *eventpb.Event) {
-	streamKey := model.UserIDString(userID)
-	s.streamsMu.RLock()
-	stream, exists := s.streams[streamKey]
-	s.streamsMu.RUnlock()
+func (s *Server) ForwardEvents(ctx context.Context, req *eventpb.ForwardEventsRequest) (*eventpb.ForwardEventsResponse, error) {
+	headerValue, err := codeheaders.GetASCIIHeaderByName(ctx, internalRpcApiKeyHeaderName)
+	if err != nil {
+		s.log.Warn("Failure getting RPC API key header")
+		return nil, status.Error(codes.Internal, "")
+	}
+	if _, ok := s.allInternalRpcApiKeys[headerValue]; !ok {
+		return &eventpb.ForwardEventsResponse{Result: eventpb.ForwardEventsResponse_DENIED}, nil
+	}
 
-	if exists {
-		cloned := proto.Clone(e).(*eventpb.Event)
-		if err := stream.Notify([]*eventpb.Event{cloned}, streamTimeout); err != nil {
-			s.log.Warn("Failed to send event", zap.Error(err))
+	for _, event := range req.UserEvents.Events {
+		log := s.log.With(
+			zap.String("event_id", EventIDString(event.Event.Id)),
+			zap.String("user_id", model.UserIDString(event.UserId)),
+		)
+
+		err = s.ForwardUserEvents(context.Background(), event)
+		if err != nil {
+			log.With(zap.Error(err)).Warn("Failure forwarding user event")
 		}
 	}
+	return &eventpb.ForwardEventsResponse{}, nil
+}
+
+// todo: utilize batching by receiver to optimize internal forwarding RPC calls
+func (s *Server) ForwardUserEvents(ctx context.Context, events ...*eventpb.UserEvent) error {
+	var err error
+	if !codeheaders.AreHeadersInitialized(ctx) {
+		ctx, err = codeheaders.ContextWithHeaders(ctx)
+		if err != nil {
+			s.log.With(zap.Error(err)).Warn("Failure initializing headers")
+			return err
+		}
+	}
+
+	err = codeheaders.SetASCIIHeader(ctx, internalRpcApiKeyHeaderName, s.currentRpcApiKey)
+	if err != nil {
+		s.log.With(zap.Error(err)).Warn("Failure setting RPC API key header")
+		return err
+	}
+
+	for _, event := range events {
+		go func() {
+			coderetry.Retry(
+				func() error {
+					return s.forwardUserEvent(ctx, event)
+				},
+				coderetry.Limit(3),
+				coderetry.Backoff(codebackoff.BinaryExponential(100*time.Millisecond), 500*time.Millisecond),
+			)
+		}()
+	}
+	return nil
+}
+
+func (s *Server) forwardUserEvent(ctx context.Context, event *eventpb.UserEvent) error {
+	log := s.log.With(
+		zap.String("event_id", EventIDString(event.Event.Id)),
+		zap.String("user_id", model.UserIDString(event.UserId)),
+	)
+
+	streamKey := model.UserIDString(event.UserId)
+
+	rendezvous, err := s.events.GetRendezvous(ctx, streamKey)
+	if err == nil {
+		log = log.With(zap.String("receiver_address", rendezvous.Address))
+
+		// Expired rendezvous record that likely wasn't cleaned up. Avoid forwarding,
+		// since we expect a broken state.
+		if time.Since(rendezvous.ExpiresAt) >= 0 {
+			return nil
+		}
+
+		// This server is hosting the user's event stream, no forwarding required
+		if rendezvous.Address == s.broadcastAddress {
+			s.streamsMu.RLock()
+			stream, exists := s.streams[streamKey]
+			s.streamsMu.RUnlock()
+
+			if exists {
+				cloned := proto.Clone(event.Event).(*eventpb.Event)
+				if err := stream.Notify([]*eventpb.Event{cloned}, streamTimeout); err != nil {
+					log.Warn("Failed to notify event on local stream", zap.Error(err))
+				}
+			}
+
+			return nil
+		}
+
+		// Otherwise, forward it to the server hosting the user's stream
+		forwardingRpcClient, err := getForwardingRpcClient(rendezvous.Address)
+		if err != nil {
+			log.With(zap.Error(err)).Warn("Failure creating forwarding RPC client")
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(ctx, forwardRpcTimeout)
+		defer cancel()
+
+		log.Debug("Forwarding events over RPC")
+
+		resp, err := forwardingRpcClient.ForwardEvents(ctx, &eventpb.ForwardEventsRequest{
+			UserEvents: &eventpb.UserEventBatch{
+				Events: []*eventpb.UserEvent{event},
+			},
+		})
+		if err != nil {
+			log.With(zap.Error(err)).Warn("Failure forwarding event over RPC")
+			return err
+		} else if resp.Result != eventpb.ForwardEventsResponse_OK {
+			log.With(zap.String("result", resp.Result.String())).Warn("Failure forwarding event over RPC")
+			return errors.Errorf("rpc forward result %s", resp.Result)
+		}
+	} else if err != ErrRendezvousNotFound {
+		log.With(zap.Error(err)).Warn("Failed to get rendezvous record")
+		return err
+	}
+
+	return nil
+}
+
+func (s *Server) OnEvent(userID *commonpb.UserId, e *eventpb.Event) {
+	s.ForwardUserEvents(context.Background(), &eventpb.UserEvent{UserId: userID, Event: e})
 }
