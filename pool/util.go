@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"math"
@@ -59,18 +60,18 @@ func GetUserSummary(ctx context.Context, pools Store, codeData codedata.Provider
 		return res, nil
 	}
 
-	betSummary, _, err := GetBetSummary(ctx, pools, codeData, pool)
+	betSummary, bets, err := GetBetSummary(ctx, pools, codeData, pool)
 	if err != nil {
 		return nil, err
 	}
 
-	return getUserSummaryWithCachedBetSummary(ctx, pools, codeData, userID, pool, betSummary)
+	return getUserSummaryWithCachedBetMetadata(userID, pool, betSummary, bets)
 }
 
 // Use this method when GetBetSummary has already been called to avoid recalculation
 //
 // todo: Export this utility?
-func getUserSummaryWithCachedBetSummary(ctx context.Context, pools Store, codeData codedata.Provider, userID *commonpb.UserId, pool *Pool, betSummary *poolpb.BetSummary) (*poolpb.UserPoolSummary, error) {
+func getUserSummaryWithCachedBetMetadata(userID *commonpb.UserId, pool *Pool, betSummary *poolpb.BetSummary, bets []*Bet) (*poolpb.UserPoolSummary, error) {
 	res := &poolpb.UserPoolSummary{
 		Outcome: &poolpb.UserPoolSummary_None{},
 	}
@@ -79,17 +80,18 @@ func getUserSummaryWithCachedBetSummary(ctx context.Context, pools Store, codeDa
 		return res, nil
 	}
 
-	userBet, err := pools.GetBetByUser(ctx, pool.ID, userID)
-	if err == ErrBetNotFound {
+	var userBet *Bet
+	for _, bet := range bets {
+		if bytes.Equal(bet.UserID.Value, userID.Value) {
+			userBet = bet
+			break
+		}
+	}
+	if userBet == nil {
 		return res, nil
-	} else if err != nil {
-		return nil, err
 	}
 
-	isPaid, err := userBet.IsPaid(ctx, pools, codeData, pool)
-	if err != nil {
-		return nil, err
-	} else if !isPaid {
+	if !userBet.IsIntentSubmitted {
 		return res, nil
 	}
 

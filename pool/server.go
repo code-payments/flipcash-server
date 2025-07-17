@@ -393,7 +393,7 @@ func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId
 	var ammountWon *commonpb.FiatPaymentAmount
 	var ammountLost *commonpb.FiatPaymentAmount
 	for _, bet := range bets {
-		userSummary, err := getUserSummaryWithCachedBetSummary(ctx, s.pools, s.codeData, bet.UserID, pool, betSummary)
+		userSummary, err := getUserSummaryWithCachedBetMetadata(bet.UserID, pool, betSummary, bets)
 		if err != nil {
 			return err
 		}
@@ -592,7 +592,7 @@ func (s *Server) getProtoPool(
 	}
 
 	if requestingUser != nil {
-		userSummary, err := getUserSummaryWithCachedBetSummary(ctx, s.pools, s.codeData, requestingUser, pool, betSummary)
+		userSummary, err := getUserSummaryWithCachedBetMetadata(requestingUser, pool, betSummary, bets)
 		if err != nil {
 			return nil, err
 		}
