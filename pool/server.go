@@ -182,8 +182,8 @@ func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*pool
 	if err == ErrPoolNotFound {
 		return &poolpb.GetPoolResponse{Result: poolpb.GetPoolResponse_NOT_FOUND}, nil
 	} else if err != nil {
-		log.With(zap.Error(err)).Warn("Failure getting pool with bets")
-		return nil, status.Error(codes.Internal, "failure getting pool with bets")
+		log.With(zap.Error(err)).Warn("Failure getting pool")
+		return nil, status.Error(codes.Internal, "failure getting pool")
 	}
 
 	return &poolpb.GetPoolResponse{Pool: protoPool}, nil
@@ -233,11 +233,9 @@ func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsReq
 
 		protoPool, err := s.getProtoPool(ctx, membership.PoolID, userID, false, false)
 		if err != nil {
-			log.With(zap.Error(err)).Warn("Failure getting pool with bets")
-			return nil, status.Error(codes.Internal, "failure getting pool with bets")
+			log.With(zap.Error(err)).Warn("Failure getting pool")
+			return nil, status.Error(codes.Internal, "failure getting pool")
 		}
-		protoPool.PagingToken = &commonpb.PagingToken{Value: membership.ID}
-
 		protoPools[i] = protoPool
 	}
 	return &poolpb.GetPagedPoolsResponse{Pools: protoPools}, nil
@@ -597,6 +595,13 @@ func (s *Server) getProtoPool(
 			return nil, err
 		}
 		protoPool.UserSummary = userSummary
+
+		membership, err := s.pools.GetMember(ctx, pool.ID, requestingUser)
+		if err == nil {
+			protoPool.PagingToken = &commonpb.PagingToken{Value: membership.ID}
+		} else if err != ErrMemberNotFound {
+			return nil, err
+		}
 
 		// todo: Can we deprecate this?
 		if bytes.Equal(requestingUser.Value, protoPool.VerifiedMetadata.Creator.Value) {

@@ -231,7 +231,19 @@ func (s *InMemoryStore) GetBetsByPool(_ context.Context, poolID *poolpb.PoolId) 
 	return pool.CloneBets(res), nil
 }
 
-func (s *InMemoryStore) GetPagedMembers(ctx context.Context, userID *commonpb.UserId, queryOptions ...database.QueryOption) ([]*pool.Member, error) {
+func (s *InMemoryStore) GetMember(_ context.Context, poolID *poolpb.PoolId, userID *commonpb.UserId) (*pool.Member, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	res := s.findMember(poolID, userID)
+
+	if res == nil {
+		return nil, pool.ErrMemberNotFound
+	}
+	return res.Clone(), nil
+}
+
+func (s *InMemoryStore) GetPagedMembers(_ context.Context, userID *commonpb.UserId, queryOptions ...database.QueryOption) ([]*pool.Member, error) {
 	appliedQueryOptions := database.ApplyQueryOptions(queryOptions...)
 
 	s.mu.RLock()
@@ -286,7 +298,7 @@ func (s *InMemoryStore) findPoolByFundingDestination(fundingDestination *commonp
 	return nil
 }
 
-func (s *InMemoryStore) findMember(userID *commonpb.UserId, poolID *poolpb.PoolId) *pool.Member {
+func (s *InMemoryStore) findMember(poolID *poolpb.PoolId, userID *commonpb.UserId) *pool.Member {
 	for _, member := range s.members {
 		if !bytes.Equal(member.UserID.Value, userID.Value) {
 			continue
@@ -313,7 +325,7 @@ func (s *InMemoryStore) findMembersByUserID(userID *commonpb.UserId) []*pool.Mem
 }
 
 func (s *InMemoryStore) addMemberIfNotFound(userID *commonpb.UserId, poolID *poolpb.PoolId) {
-	existing := s.findMember(userID, poolID)
+	existing := s.findMember(poolID, userID)
 	if existing != nil {
 		return
 	}

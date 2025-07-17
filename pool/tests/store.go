@@ -206,7 +206,10 @@ func testPoolStore_MemberHappyPath(t *testing.T, s pool.Store) {
 
 	userID := model.MustGenerateUserID()
 
-	_, err := s.GetPagedMembers(ctx, userID)
+	_, err := s.GetMember(ctx, pool.ToPoolID(model.MustGenerateKeyPair()), userID)
+	require.Equal(t, pool.ErrMemberNotFound, err)
+
+	_, err = s.GetPagedMembers(ctx, userID)
 	require.Equal(t, pool.ErrMemberNotFound, err)
 
 	var expectedPoolIDs []*poolpb.PoolId
@@ -241,6 +244,13 @@ func testPoolStore_MemberHappyPath(t *testing.T, s pool.Store) {
 		}
 		rand.Read(b.Signature.Value[:])
 		require.NoError(t, s.CreateBet(ctx, b))
+	}
+
+	for _, expectedPoolID := range expectedPoolIDs {
+		actual, err := s.GetMember(ctx, expectedPoolID, userID)
+		require.NoError(t, err)
+		require.NoError(t, protoutil.ProtoEqualError(expectedPoolID, actual.PoolID))
+		require.NoError(t, protoutil.ProtoEqualError(userID, actual.UserID))
 	}
 
 	allActual, err := s.GetPagedMembers(ctx, userID)

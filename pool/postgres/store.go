@@ -105,6 +105,14 @@ func (s *store) GetBetsByPool(ctx context.Context, poolID *poolpb.PoolId) ([]*po
 	return res, nil
 }
 
+func (s *store) GetMember(ctx context.Context, poolID *poolpb.PoolId, userID *commonpb.UserId) (*pool.Member, error) {
+	model, err := dbGetMember(ctx, s.pgxPool, poolID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return fromMemberModel(model)
+}
+
 func (s *store) GetPagedMembers(ctx context.Context, userID *commonpb.UserId, queryOptions ...database.QueryOption) ([]*pool.Member, error) {
 	models, err := dbGetPagedMembers(ctx, s.pgxPool, userID, queryOptions...)
 	if err != nil {

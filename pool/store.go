@@ -56,6 +56,9 @@ type Store interface {
 	// GetBetsByPool gets all bets for a given pool
 	GetBetsByPool(ctx context.Context, poolID *poolpb.PoolId) ([]*Bet, error)
 
+	// GetMember gets the pool memberships for the provided pool and user
+	GetMember(ctx context.Context, poolID *poolpb.PoolId, userID *commonpb.UserId) (*Member, error)
+
 	// GetPagedMembers gets the set of pool memberships for the provided user
 	// over a paged API
 	GetPagedMembers(ctx context.Context, userID *commonpb.UserId, options ...database.QueryOption) ([]*Member, error)

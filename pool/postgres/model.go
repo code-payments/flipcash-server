@@ -509,6 +509,27 @@ func dbGetBetsByPool(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.
 	return res, nil
 }
 
+func dbGetMember(ctx context.Context, pgxPool *pgxpool.Pool, poolID *poolpb.PoolId, userID *commonpb.UserId) (*memberModel, error) {
+	res := &memberModel{}
+	query := `SELECT ` + allMemberFields + ` FROM ` + membersTableName +
+		` WHERE "poolId" = $1 AND "userId" = $2`
+	err := pgxscan.Get(
+		ctx,
+		pgxPool,
+		res,
+		query,
+		pg.Encode(poolID.Value, pg.Base58),
+		pg.Encode(userID.Value),
+	)
+	if err != nil {
+		if pgxscan.NotFound(err) {
+			return nil, pool.ErrMemberNotFound
+		}
+		return nil, err
+	}
+	return res, nil
+}
+
 func dbGetPagedMembers(ctx context.Context, pgxPool *pgxpool.Pool, userID *commonpb.UserId, queryOptions ...database.QueryOption) ([]*memberModel, error) {
 	var res []*memberModel
 
