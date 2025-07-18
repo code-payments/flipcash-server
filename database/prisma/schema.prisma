@@ -134,6 +134,23 @@ model PushToken {
   @@map("flipcash_pushtokens")
 }
 
+model Rendezvous {
+  // Fields
+
+  key     String @id
+  address String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  expiresAt DateTime
+
+  // Relations
+
+  // Constraints
+
+  @@map("flipcash_rendezvous")
+}
+
 model User {
   // Fields
 
