@@ -45,6 +45,7 @@ func testSingleServerHappyPath(t *testing.T, accounts account.Store, events even
 	userID := model.MustGenerateUserID()
 	keyPair := model.MustGenerateKeyPair()
 	accounts.Bind(context.Background(), userID, keyPair.Proto())
+	accounts.SetRegistrationFlag(context.Background(), userID, true)
 
 	testEnv.client1.openUserEventStream(t, userID, keyPair)
 
@@ -67,6 +68,7 @@ func testMultiServerHappyPath(t *testing.T, accounts account.Store, events event
 	userID := model.MustGenerateUserID()
 	keyPair := model.MustGenerateKeyPair()
 	accounts.Bind(context.Background(), userID, keyPair.Proto())
+	accounts.SetRegistrationFlag(context.Background(), userID, true)
 
 	testEnv.client1.openUserEventStream(t, userID, keyPair)
 
@@ -95,6 +97,7 @@ func testMultipleOpenStreams(t *testing.T, accounts account.Store, events event.
 			userID := model.MustGenerateUserID()
 			keyPair := model.MustGenerateKeyPair()
 			accounts.Bind(context.Background(), userID, keyPair.Proto())
+			accounts.SetRegistrationFlag(context.Background(), userID, true)
 
 			for range 10 {
 				testEnv.client1.openUserEventStream(t, userID, keyPair)
@@ -115,7 +118,7 @@ func testMultipleOpenStreams(t *testing.T, accounts account.Store, events event.
 				fromServer2 := testEnv.client2.receiveEventsInRealTime(t, userID)
 
 				allActual := append(fromServer1, fromServer2...)
-				require.Len(t, allActual, 1)
+				require.Lenf(t, allActual, 1, "expected: %s (%d)", i, event.EventIDString(expected.Id))
 				require.NoError(t, protoutil.ProtoEqualError(expected, allActual[0]))
 			}
 		}()
@@ -129,6 +132,7 @@ func testKeepAlive(t *testing.T, accounts account.Store, events event.Store) {
 	userID := model.MustGenerateUserID()
 	keyPair := model.MustGenerateKeyPair()
 	accounts.Bind(context.Background(), userID, keyPair.Proto())
+	accounts.SetRegistrationFlag(context.Background(), userID, true)
 
 	testEnv.client1.openUserEventStream(t, userID, keyPair)
 
@@ -146,6 +150,7 @@ func testRendezvousRecord(t *testing.T, accounts account.Store, events event.Sto
 	userID := model.MustGenerateUserID()
 	keyPair := model.MustGenerateKeyPair()
 	accounts.Bind(context.Background(), userID, keyPair.Proto())
+	accounts.SetRegistrationFlag(context.Background(), userID, true)
 
 	testEnv.client1.openUserEventStream(t, userID, keyPair)
 
@@ -223,6 +228,7 @@ func setupTest(t *testing.T, accounts account.Store, events event.Store, enableM
 		server: event.NewServer(
 			log,
 			authz,
+			accounts,
 			events,
 			eventBus1,
 			conn1.Target(),
@@ -236,6 +242,7 @@ func setupTest(t *testing.T, accounts account.Store, events event.Store, enableM
 		server: event.NewServer(
 			log,
 			authz,
+			accounts,
 			events,
 			eventBus2,
 			conn2.Target(),

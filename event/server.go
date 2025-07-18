@@ -21,6 +21,7 @@ import (
 	codeheaders "github.com/code-payments/code-server/pkg/grpc/headers"
 	coderetry "github.com/code-payments/code-server/pkg/retry"
 	codebackoff "github.com/code-payments/code-server/pkg/retry/backoff"
+	"github.com/code-payments/flipcash-server/account"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/model"
 	"github.com/code-payments/flipcash-server/protoutil"
@@ -47,7 +48,8 @@ type Server struct {
 
 	authz auth.Authorizer
 
-	events Store
+	accounts account.Store
+	events   Store
 
 	eventBus *Bus[*commonpb.UserId, *eventpb.Event]
 
@@ -65,6 +67,7 @@ type Server struct {
 func NewServer(
 	log *zap.Logger,
 	authz auth.Authorizer,
+	accounts account.Store,
 	events Store,
 	eventBus *Bus[*commonpb.UserId, *eventpb.Event],
 	broadcastAddress string,
@@ -75,7 +78,8 @@ func NewServer(
 
 		authz: authz,
 
-		events: events,
+		accounts: accounts,
+		events:   events,
 
 		eventBus: eventBus,
 
@@ -123,14 +127,22 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 		return err
 	}
 
+	log := s.log.With(zap.String("user_id", model.UserIDString(userID)))
+
+	isRegistered, err := s.accounts.IsRegistered(ctx, userID)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure getting registration flag")
+		return status.Error(codes.Internal, "failure getting registration flag")
+	} else if !isRegistered {
+		return stream.Send(&eventpb.StreamEventsResponse{Type: &eventpb.StreamEventsResponse_Error{
+			Error: &eventpb.StreamEventsResponse_StreamError{Code: eventpb.StreamEventsResponse_StreamError_DENIED},
+		}})
+	}
+
 	streamID := uuid.New()
-
-	log := s.log.With(
-		zap.String("user_id", model.UserIDString(userID)),
-		zap.String("stream_id", streamID.String()),
-	)
-
 	streamKey := model.UserIDString(userID)
+
+	log = log.With(zap.String("stream_id", streamID.String()))
 
 	s.streamsMu.Lock()
 	if existing, exists := s.streams[streamKey]; exists {
@@ -238,14 +250,14 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 				return status.Error(codes.Aborted, "stream closed")
 			}
 
-			log.Debug("Sending events to client")
+			log.Debug("Sending events to client stream")
 			err = stream.Send(&eventpb.StreamEventsResponse{
 				Type: &eventpb.StreamEventsResponse_Events{
 					Events: batch,
 				},
 			})
 			if err != nil {
-				log.Info("Failed to send events to client", zap.Error(err))
+				log.Info("Failed to send events to client stream", zap.Error(err))
 				return err
 			}
 		case <-updateRendezvousCh:
@@ -360,6 +372,7 @@ func (s *Server) forwardUserEvent(ctx context.Context, event *eventpb.UserEvent)
 		// Expired rendezvous record that likely wasn't cleaned up. Avoid forwarding,
 		// since we expect a broken state.
 		if time.Since(rendezvous.ExpiresAt) >= 0 {
+			log.With(zap.Error(err)).Debug("Dropping event with expired rendezvous record")
 			return nil
 		}
 
@@ -403,6 +416,8 @@ func (s *Server) forwardUserEvent(ctx context.Context, event *eventpb.UserEvent)
 			log.With(zap.String("result", resp.Result.String())).Warn("Failure forwarding event over RPC")
 			return errors.Errorf("rpc forward result %s", resp.Result)
 		}
+	} else if err == ErrRendezvousNotFound {
+		log.Debug("Dropping event without rendezvous record")
 	} else if err != ErrRendezvousNotFound {
 		log.With(zap.Error(err)).Warn("Failed to get rendezvous record")
 		return err
