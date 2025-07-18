@@ -264,6 +264,7 @@ func setupTest(t *testing.T, accounts account.Store, events event.Store, enableM
 func (s *serverTestEnv) sendTestUserEvent(t *testing.T, userID *commonpb.UserId) *eventpb.Event {
 	e := &eventpb.Event{
 		Id: event.MustGenerateEventID(),
+		Ts: timestamppb.Now(),
 		Type: &eventpb.Event_Test{
 			Test: &eventpb.Event_TestEvent{
 				SourceAddress: s.address,
