@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
@@ -57,7 +58,7 @@ func testSingleServerHappyPath(t *testing.T, accounts account.Store, events even
 		allActual := testEnv.client1.receiveEventsInRealTime(t, userID)
 
 		require.Len(t, allActual, 1)
-		require.NoError(t, protoutil.ProtoEqualError(expected, allActual[0]))
+		assertEquivalentTestEvents(t, expected, allActual[0])
 	}
 }
 
@@ -84,7 +85,7 @@ func testMultiServerHappyPath(t *testing.T, accounts account.Store, events event
 
 		allActual := testEnv.client1.receiveEventsInRealTime(t, userID)
 		require.Len(t, allActual, 1)
-		require.NoError(t, protoutil.ProtoEqualError(expected, allActual[0]))
+		assertEquivalentTestEvents(t, expected, allActual[0])
 	}
 }
 
@@ -119,7 +120,7 @@ func testMultipleOpenStreams(t *testing.T, accounts account.Store, events event.
 
 				allActual := append(fromServer1, fromServer2...)
 				require.Lenf(t, allActual, 1, "expected[%d]: %s", i, event.EventIDString(expected.Id))
-				require.NoError(t, protoutil.ProtoEqualError(expected, allActual[0]))
+				assertEquivalentTestEvents(t, expected, allActual[0])
 			}
 		}()
 	}
@@ -274,8 +275,8 @@ func (s *serverTestEnv) sendTestUserEvent(t *testing.T, userID *commonpb.UserId)
 		Ts: timestamppb.Now(),
 		Type: &eventpb.Event_Test{
 			Test: &eventpb.Event_TestEvent{
-				SourceAddress: s.address,
-				Nonce:         uint64(rand.Int64()),
+				Hops:  []string{s.address},
+				Nonce: uint64(rand.Int64()),
 			},
 		},
 	}
@@ -418,4 +419,12 @@ func (c *clientTestEnv) closeUserEventStream(t *testing.T, userID *commonpb.User
 		streamer.cancel()
 	}
 	delete(c.streams, key)
+}
+
+func assertEquivalentTestEvents(t *testing.T, obj1, obj2 *eventpb.Event) {
+	cloned1 := proto.Clone(obj1).(*eventpb.Event)
+	cloned2 := proto.Clone(obj2).(*eventpb.Event)
+	cloned1.GetTest().Hops = nil
+	cloned2.GetTest().Hops = nil
+	require.NoError(t, protoutil.ProtoEqualError(cloned1, cloned2))
 }

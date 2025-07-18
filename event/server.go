@@ -318,6 +318,11 @@ func (s *Server) ForwardEvents(ctx context.Context, req *eventpb.ForwardEventsRe
 			zap.String("user_id", model.UserIDString(event.UserId)),
 		)
 
+		switch typed := event.Event.Type.(type) {
+		case *eventpb.Event_Test:
+			typed.Test.Hops = append(typed.Test.Hops, s.broadcastAddress)
+		}
+
 		err = s.ForwardUserEvents(context.Background(), event)
 		if err != nil {
 			log.With(zap.Error(err)).Warn("Failure forwarding user event")
