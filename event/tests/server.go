@@ -118,7 +118,7 @@ func testMultipleOpenStreams(t *testing.T, accounts account.Store, events event.
 				fromServer2 := testEnv.client2.receiveEventsInRealTime(t, userID)
 
 				allActual := append(fromServer1, fromServer2...)
-				require.Lenf(t, allActual, 1, "expected: %s (%d)", i, event.EventIDString(expected.Id))
+				require.Lenf(t, allActual, 1, "expected[%d]: %s", i, event.EventIDString(expected.Id))
 				require.NoError(t, protoutil.ProtoEqualError(expected, allActual[0]))
 			}
 		}()
