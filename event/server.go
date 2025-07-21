@@ -331,6 +331,7 @@ func (s *Server) ForwardEvents(ctx context.Context, req *eventpb.ForwardEventsRe
 	return &eventpb.ForwardEventsResponse{}, nil
 }
 
+// todo: duplicated code with ForwardingClient
 // todo: utilize batching by receiver to optimize internal forwarding RPC calls
 func (s *Server) ForwardUserEvents(ctx context.Context, events ...*eventpb.UserEvent) error {
 	var err error
@@ -362,6 +363,7 @@ func (s *Server) ForwardUserEvents(ctx context.Context, events ...*eventpb.UserE
 	return nil
 }
 
+// todo: duplicated code with ForwardingClient
 func (s *Server) forwardUserEvent(ctx context.Context, event *eventpb.UserEvent) error {
 	log := s.log.With(
 		zap.String("event_id", EventIDString(event.Event.Id)),
