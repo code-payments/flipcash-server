@@ -28,6 +28,11 @@ func EventIDString(id *eventpb.EventId) string {
 	return uuidValue.String()
 }
 
+type KeyAndEvent[Key, Event any] struct {
+	Key   Key
+	Event Event
+}
+
 type Rendezvous struct {
 	Key       string
 	Address   string

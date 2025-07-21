@@ -16,15 +16,12 @@ func (f HandlerFunc[Key, Event]) OnEvent(key Key, e Event) {
 }
 
 type Bus[Key, Event any] struct {
-	keyFor func(Key) []byte
-
 	handlersMu sync.RWMutex
 	handlers   []Handler[Key, Event]
 }
 
-func NewBus[Key, Event any](keyFor func(Key) []byte) *Bus[Key, Event] {
+func NewBus[Key, Event any]() *Bus[Key, Event] {
 	return &Bus[Key, Event]{
-		keyFor:     keyFor,
 		handlersMu: sync.RWMutex{},
 		handlers:   nil,
 	}
@@ -36,7 +33,7 @@ func (b *Bus[Key, Event]) AddHandler(h Handler[Key, Event]) {
 	b.handlersMu.Unlock()
 }
 
-func (b *Bus[Key, Event]) OnEvent(key Key, e Event) error {
+func (b *Bus[Key, Event]) OnEvent(key Key, e Event) {
 	b.handlersMu.RLock()
 	// Copy handlers to prevent race conditions
 	handlers := make([]Handler[Key, Event], len(b.handlers))
@@ -47,6 +44,4 @@ func (b *Bus[Key, Event]) OnEvent(key Key, e Event) error {
 	for _, h := range handlers {
 		go h.OnEvent(key, e)
 	}
-
-	return nil
 }

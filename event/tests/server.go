@@ -53,7 +53,7 @@ func testSingleServerHappyPath(t *testing.T, accounts account.Store, events even
 	time.Sleep(500 * time.Millisecond)
 
 	for range 100 {
-		expected := testEnv.server1.sendTestUserEvent(t, userID)
+		expected := testEnv.server1.sendTestUserEvent(userID)
 
 		allActual := testEnv.client1.receiveEventsInRealTime(t, userID)
 
@@ -81,7 +81,7 @@ func testMultiServerHappyPath(t *testing.T, accounts account.Store, events event
 			sender = testEnv.server2
 		}
 
-		expected := sender.sendTestUserEvent(t, userID)
+		expected := sender.sendTestUserEvent(userID)
 
 		allActual := testEnv.client1.receiveEventsInRealTime(t, userID)
 		require.Len(t, allActual, 1)
@@ -113,7 +113,7 @@ func testMultipleOpenStreams(t *testing.T, accounts account.Store, events event.
 					sender = testEnv.server2
 				}
 
-				expected := sender.sendTestUserEvent(t, userID)
+				expected := sender.sendTestUserEvent(userID)
 
 				fromServer1 := testEnv.client1.receiveEventsInRealTime(t, userID)
 				fromServer2 := testEnv.client2.receiveEventsInRealTime(t, userID)
@@ -215,12 +215,8 @@ func setupTest(t *testing.T, accounts account.Store, events event.Store, enableM
 
 	authz := account.NewAuthorizer(log, accounts, auth.NewKeyPairAuthenticator())
 
-	eventBus1 := event.NewBus[*commonpb.UserId, *eventpb.Event](func(id *commonpb.UserId) []byte {
-		return id.Value
-	})
-	eventBus2 := event.NewBus[*commonpb.UserId, *eventpb.Event](func(id *commonpb.UserId) []byte {
-		return id.Value
-	})
+	eventBus1 := event.NewBus[*commonpb.UserId, *eventpb.Event]()
+	eventBus2 := event.NewBus[*commonpb.UserId, *eventpb.Event]()
 
 	env.server1 = &serverTestEnv{
 		address:  conn1.Target(),
@@ -269,18 +265,18 @@ func setupTest(t *testing.T, accounts account.Store, events event.Store, enableM
 	}
 }
 
-func (s *serverTestEnv) sendTestUserEvent(t *testing.T, userID *commonpb.UserId) *eventpb.Event {
+func (s *serverTestEnv) sendTestUserEvent(userID *commonpb.UserId) *eventpb.Event {
 	e := &eventpb.Event{
 		Id: event.MustGenerateEventID(),
 		Ts: timestamppb.Now(),
 		Type: &eventpb.Event_Test{
-			Test: &eventpb.Event_TestEvent{
+			Test: &eventpb.TestEvent{
 				Hops:  []string{s.address},
 				Nonce: uint64(rand.Int64()),
 			},
 		},
 	}
-	require.NoError(t, s.eventBus.OnEvent(userID, e))
+	s.eventBus.OnEvent(userID, e)
 	return e
 }
 

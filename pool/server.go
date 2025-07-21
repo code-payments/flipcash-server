@@ -8,9 +8,11 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	codecommonpb "github.com/code-payments/code-protobuf-api/generated/go/common/v1"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
+	eventpb "github.com/code-payments/flipcash-protobuf-api/generated/go/event/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
@@ -19,6 +21,7 @@ import (
 	"github.com/code-payments/flipcash-server/account"
 	"github.com/code-payments/flipcash-server/auth"
 	"github.com/code-payments/flipcash-server/database"
+	"github.com/code-payments/flipcash-server/event"
 	"github.com/code-payments/flipcash-server/model"
 	"github.com/code-payments/flipcash-server/profile"
 	"github.com/code-payments/flipcash-server/push"
@@ -40,12 +43,23 @@ type Server struct {
 	profiles profile.Store
 	codeData codedata.Provider
 
+	eventBus *event.Bus[*commonpb.UserId, *eventpb.Event]
+
 	pusher push.Pusher
 
 	poolpb.UnimplementedPoolServer
 }
 
-func NewServer(log *zap.Logger, auth auth.Authorizer, accounts account.Store, pools Store, profiles profile.Store, codeData codedata.Provider, pusher push.Pusher) *Server {
+func NewServer(
+	log *zap.Logger,
+	auth auth.Authorizer,
+	accounts account.Store,
+	pools Store,
+	profiles profile.Store,
+	codeData codedata.Provider,
+	eventBus *event.Bus[*commonpb.UserId, *eventpb.Event],
+	pusher push.Pusher,
+) *Server {
 	return &Server{
 		log: log,
 
@@ -55,6 +69,8 @@ func NewServer(log *zap.Logger, auth auth.Authorizer, accounts account.Store, po
 		pools:    pools,
 		profiles: profiles,
 		codeData: codeData,
+
+		eventBus: eventBus,
 
 		pusher: pusher,
 	}
@@ -357,6 +373,7 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 		return nil, status.Error(codes.PermissionDenied, "")
 	}
 
+	ts := time.Now()
 	err = database.ExecuteTxWithinCtx(ctx, func(ctx context.Context) error {
 		return s.pools.ResolvePool(ctx, req.Id, resolution, req.NewRendezvousSignature)
 	})
@@ -366,7 +383,7 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 	}
 
 	go func() {
-		err = s.notifyPoolResolution(context.Background(), pool.ID)
+		err = s.notifyPoolResolution(context.Background(), pool.ID, ts)
 		if err != nil {
 			log.With(zap.Error(err)).Warn("Failed to notify pool resolution")
 		}
@@ -375,11 +392,13 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 	return &poolpb.ResolvePoolResponse{}, nil
 }
 
-func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId) error {
+func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId, ts time.Time) error {
 	pool, err := s.pools.GetPoolByID(ctx, poolID)
 	if err != nil {
 		return err
 	}
+
+	verifiedProtoPool := pool.ToProto().VerifiedMetadata
 
 	betSummary, bets, err := GetBetSummary(ctx, s.pools, s.codeData, pool)
 	if err != nil {
@@ -389,8 +408,9 @@ func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId
 	var winners []*commonpb.UserId
 	var losers []*commonpb.UserId
 	var refundedUsers []*commonpb.UserId
-	var ammountWon *commonpb.FiatPaymentAmount
-	var ammountLost *commonpb.FiatPaymentAmount
+	var winOutcome *poolpb.UserPoolSummary_WinOutcome
+	var loseOutcome *poolpb.UserPoolSummary_LoseOutcome
+	var refundOutcome *poolpb.UserPoolSummary_RefundOutcome
 	for _, bet := range bets {
 		userSummary, err := getUserSummaryWithCachedBetMetadata(bet.UserID, pool, betSummary, bets)
 		if err != nil {
@@ -399,22 +419,79 @@ func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId
 		switch typed := userSummary.Outcome.(type) {
 		case *poolpb.UserPoolSummary_Win:
 			winners = append(winners, bet.UserID)
-			ammountWon = typed.Win.AmountWon
+			winOutcome = typed.Win
 		case *poolpb.UserPoolSummary_Lose:
 			losers = append(losers, bet.UserID)
-			ammountLost = typed.Lose.AmountLost
+			loseOutcome = typed.Lose
 		case *poolpb.UserPoolSummary_Refund:
 			refundedUsers = append(refundedUsers, bet.UserID)
+			refundOutcome = typed.Refund
 		}
 	}
 
 	if len(winners) > 0 {
-		go push.SendWinBettingPoolPushes(ctx, s.pusher, pool.Name, ammountWon, winners...)
+		for _, winner := range winners {
+			s.eventBus.OnEvent(winner, &eventpb.Event{
+				Id: event.MustGenerateEventID(),
+				Ts: timestamppb.New(ts),
+				Type: &eventpb.Event_PoolResolved{
+					PoolResolved: &eventpb.PoolResolvedEvent{
+						Pool:       verifiedProtoPool,
+						BetSummary: betSummary,
+						UserSummary: &poolpb.UserPoolSummary{
+							Outcome: &poolpb.UserPoolSummary_Win{
+								Win: winOutcome,
+							},
+						},
+					},
+				},
+			})
+		}
+
+		go push.SendWinBettingPoolPushes(ctx, s.pusher, pool.Name, winOutcome.AmountWon, winners...)
 	}
+
 	if len(losers) > 0 {
-		go push.SendLostBettingPoolPushes(ctx, s.pusher, pool.Name, ammountLost, losers...)
+		for _, loser := range losers {
+			s.eventBus.OnEvent(loser, &eventpb.Event{
+				Id: event.MustGenerateEventID(),
+				Ts: timestamppb.New(ts),
+				Type: &eventpb.Event_PoolResolved{
+					PoolResolved: &eventpb.PoolResolvedEvent{
+						Pool:       verifiedProtoPool,
+						BetSummary: betSummary,
+						UserSummary: &poolpb.UserPoolSummary{
+							Outcome: &poolpb.UserPoolSummary_Lose{
+								Lose: loseOutcome,
+							},
+						},
+					},
+				},
+			})
+		}
+
+		go push.SendLostBettingPoolPushes(ctx, s.pusher, pool.Name, loseOutcome.AmountLost, losers...)
 	}
+
 	if len(refundedUsers) > 0 {
+		for _, user := range refundedUsers {
+			s.eventBus.OnEvent(user, &eventpb.Event{
+				Id: event.MustGenerateEventID(),
+				Ts: timestamppb.New(ts),
+				Type: &eventpb.Event_PoolResolved{
+					PoolResolved: &eventpb.PoolResolvedEvent{
+						Pool:       verifiedProtoPool,
+						BetSummary: betSummary,
+						UserSummary: &poolpb.UserPoolSummary{
+							Outcome: &poolpb.UserPoolSummary_Refund{
+								Refund: refundOutcome,
+							},
+						},
+					},
+				},
+			})
+		}
+
 		go push.SendTieBettingPoolPushes(ctx, s.pusher, pool.Name, refundedUsers...)
 	}
 

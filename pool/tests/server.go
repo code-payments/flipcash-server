@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 
 	codecommonpb "github.com/code-payments/code-protobuf-api/generated/go/common/v1"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
+	eventpb "github.com/code-payments/flipcash-protobuf-api/generated/go/event/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
@@ -21,6 +23,7 @@ import (
 	codetestutil "github.com/code-payments/code-server/pkg/testutil"
 	"github.com/code-payments/flipcash-server/account"
 	"github.com/code-payments/flipcash-server/auth"
+	"github.com/code-payments/flipcash-server/event"
 	"github.com/code-payments/flipcash-server/model"
 	"github.com/code-payments/flipcash-server/pool"
 	"github.com/code-payments/flipcash-server/profile"
@@ -31,9 +34,8 @@ import (
 // todo: Add tests around more edge case result codes and flows
 // todo: Add tests around signature verification
 // todo: Add tests around verified bet payments
-// todo: Add tests for user summaries
+// todo: Add tests for ties/refunds
 // todo: Add tests for user profiles
-// todo: Add more test for paging APIs, but those are well covered in store tests
 
 func RunServerTests(t *testing.T, accounts account.Store, pools pool.Store, profiles profile.Store, teardown func()) {
 	for _, tf := range []func(t *testing.T, accounts account.Store, pools pool.Store, profiles profile.Store){
@@ -53,7 +55,8 @@ func testServer_PoolManagement_HappyPath(t *testing.T, accounts account.Store, p
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
 	codeData := codedata.NewTestDataProvider()
-	server := pool.NewServer(log, authz, accounts, pools, profiles, codeData, push.NewNoOpPusher())
+	eventBus := event.NewBus[*commonpb.UserId, *eventpb.Event]()
+	server := pool.NewServer(log, authz, accounts, pools, profiles, codeData, eventBus, push.NewNoOpPusher())
 	codetestutil.SetupRandomSubsidizer(t, codeData)
 
 	creatorKey := model.MustGenerateKeyPair()
@@ -143,7 +146,10 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
 	codeData := codedata.NewTestDataProvider()
-	server := pool.NewServer(log, authz, accounts, pools, profiles, codeData, push.NewNoOpPusher())
+	eventBus := event.NewBus[*commonpb.UserId, *eventpb.Event]()
+	eventObserver := event.NewTestEventObserver[*commonpb.UserId, *eventpb.Event]()
+	eventBus.AddHandler(eventObserver)
+	server := pool.NewServer(log, authz, accounts, pools, profiles, codeData, eventBus, push.NewNoOpPusher())
 	codetestutil.SetupRandomSubsidizer(t, codeData)
 
 	creatorKey := model.MustGenerateKeyPair()
@@ -178,6 +184,7 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 
 	var expectedBets []*poolpb.SignedBetMetadata
 	var expectedBetSignatures []*commonpb.Signature
+	var expectedNumYes, expectedNumNo int
 	for i, bet := range allBets {
 		makeBetReq := &poolpb.MakeBetRequest{
 			PoolId: poolID,
@@ -196,6 +203,12 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 
 		expectedBets = append(expectedBets, bet)
 		expectedBetSignatures = append(expectedBetSignatures, makeBetReq.RendezvousSignature)
+
+		if bet.SelectedOutcome.GetBooleanOutcome() {
+			expectedNumYes++
+		} else {
+			expectedNumNo++
+		}
 	}
 
 	getReq := &poolpb.GetPoolRequest{
@@ -231,8 +244,8 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 		require.NoError(t, protoutil.ProtoEqualError(expectedBetSignatures[i], actual.RendezvousSignature))
 		require.True(t, actual.IsIntentSubmitted)
 	}
-	require.EqualValues(t, 84, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes)
-	require.EqualValues(t, 166, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo)
+	require.EqualValues(t, expectedNumYes, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes)
+	require.EqualValues(t, expectedNumNo, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo)
 	require.EqualValues(t, protoPool.BuyIn.Currency, getPoolResp.Pool.BetSummary.TotalAmountBet.Currency)
 	require.EqualValues(t, pool.MaxParticipants*protoPool.BuyIn.NativeAmount, getPoolResp.Pool.BetSummary.TotalAmountBet.NativeAmount)
 
@@ -267,6 +280,57 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 	require.NoError(t, err)
 	require.Equal(t, poolpb.GetPoolResponse_OK, getPoolResp.Result)
 	require.Len(t, getPoolResp.Pool.Bets, len(expectedBets))
+
+	expectedAmountReceived := (float64(expectedNumYes+expectedNumNo) * protoPool.BuyIn.NativeAmount) / float64(expectedNumYes)
+	expectedAmountWon := expectedAmountReceived - protoPool.BuyIn.NativeAmount
+	protoPool.Resolution = &poolpb.Resolution{Kind: &poolpb.Resolution_BooleanResolution{
+		BooleanResolution: true,
+	}}
+	resolveReq := &poolpb.ResolvePoolRequest{
+		Id:         poolID,
+		Resolution: protoPool.Resolution,
+	}
+	require.NoError(t, rendezvousKey.Sign(protoPool, &resolveReq.NewRendezvousSignature))
+	require.NoError(t, creatorKey.Auth(resolveReq, &resolveReq.Auth))
+
+	resolveResp, err := server.ResolvePool(ctx, resolveReq)
+	require.NoError(t, err)
+	require.Equal(t, poolpb.ResolvePoolResponse_OK, resolveResp.Result)
+
+	for i, expectedBet := range expectedBets {
+		getReq := &poolpb.GetPoolRequest{
+			Id: poolID,
+		}
+		require.NoError(t, betterKeys[i].Auth(getReq, &getReq.Auth))
+
+		getPoolResp, err = server.GetPool(ctx, getReq)
+		require.NoError(t, err)
+		require.Equal(t, poolpb.GetPoolResponse_OK, getPoolResp.Result)
+		require.NotNil(t, getPoolResp.Pool.UserSummary)
+
+		userSummary := getPoolResp.Pool.UserSummary
+		if expectedBet.SelectedOutcome.GetBooleanOutcome() {
+			require.NotNil(t, userSummary.GetWin())
+			require.Equal(t, protoPool.BuyIn.Currency, userSummary.GetWin().AmountWon.Currency)
+			require.Equal(t, expectedAmountWon, userSummary.GetWin().AmountWon.NativeAmount)
+			require.Equal(t, protoPool.BuyIn.Currency, userSummary.GetWin().TotalAmountReceived.Currency)
+			require.Equal(t, expectedAmountReceived, userSummary.GetWin().TotalAmountReceived.NativeAmount)
+		} else {
+			require.NotNil(t, userSummary.GetLose())
+			require.NoError(t, protoutil.ProtoEqualError(protoPool.BuyIn, userSummary.GetLose().AmountLost))
+		}
+
+		eventObserver.WaitFor(t, func(events []*event.KeyAndEvent[*commonpb.UserId, *eventpb.Event]) bool {
+			return len(events) == len(expectedBets)
+		})
+		events := eventObserver.GetEvents(func(id *commonpb.UserId) bool { return bytes.Equal(expectedBet.UserId.Value, id.Value) })
+		require.Len(t, events, 1)
+		actualEvent := events[0].Event.GetPoolResolved()
+		require.NotNil(t, actualEvent)
+		require.NoError(t, protoutil.ProtoEqualError(getPoolResp.Pool.VerifiedMetadata, actualEvent.Pool))
+		require.NoError(t, protoutil.ProtoEqualError(getPoolResp.Pool.BetSummary, actualEvent.BetSummary))
+		require.NoError(t, protoutil.ProtoEqualError(userSummary, actualEvent.UserSummary))
+	}
 }
 
 func testServer_Membership_HappyPath(t *testing.T, accounts account.Store, pools pool.Store, profiles profile.Store) {
@@ -276,7 +340,8 @@ func testServer_Membership_HappyPath(t *testing.T, accounts account.Store, pools
 	authn := auth.NewKeyPairAuthenticator()
 	authz := account.NewAuthorizer(log, accounts, authn)
 	codeData := codedata.NewTestDataProvider()
-	server := pool.NewServer(log, authz, accounts, pools, profiles, codeData, push.NewNoOpPusher())
+	eventBus := event.NewBus[*commonpb.UserId, *eventpb.Event]()
+	server := pool.NewServer(log, authz, accounts, pools, profiles, codeData, eventBus, push.NewNoOpPusher())
 	codetestutil.SetupRandomSubsidizer(t, codeData)
 
 	creatorKey := model.MustGenerateKeyPair()
