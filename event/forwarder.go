@@ -78,7 +78,8 @@ func (c *ForwardingClient) forwardUserEvent(ctx context.Context, event *eventpb.
 	streamKey := model.UserIDString(event.UserId)
 
 	rendezvous, err := c.events.GetRendezvous(ctx, streamKey)
-	if err == nil {
+	switch err {
+	case nil:
 		log = log.With(zap.String("receiver_address", rendezvous.Address))
 
 		// Expired rendezvous record that likely wasn't cleaned up. Avoid forwarding,
@@ -112,9 +113,11 @@ func (c *ForwardingClient) forwardUserEvent(ctx context.Context, event *eventpb.
 			log.With(zap.String("result", resp.Result.String())).Warn("Failure forwarding event over RPC")
 			return errors.Errorf("rpc forward result %s", resp.Result)
 		}
-	} else if err == ErrRendezvousNotFound {
+
+	case ErrRendezvousNotFound:
 		log.Debug("Dropping event without rendezvous record")
-	} else if err != ErrRendezvousNotFound {
+
+	default:
 		log.With(zap.Error(err)).Warn("Failed to get rendezvous record")
 		return err
 	}
