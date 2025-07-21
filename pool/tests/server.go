@@ -231,10 +231,10 @@ func testServer_Betting_HappyPath(t *testing.T, accounts account.Store, pools po
 		require.NoError(t, protoutil.ProtoEqualError(expectedBetSignatures[i], actual.RendezvousSignature))
 		require.True(t, actual.IsIntentSubmitted)
 	}
-	require.EqualValues(t, 34, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes)
-	require.EqualValues(t, 66, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo)
+	require.EqualValues(t, 84, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumYes)
+	require.EqualValues(t, 166, getPoolResp.Pool.BetSummary.GetBooleanSummary().NumNo)
 	require.EqualValues(t, protoPool.BuyIn.Currency, getPoolResp.Pool.BetSummary.TotalAmountBet.Currency)
-	require.EqualValues(t, 100*protoPool.BuyIn.NativeAmount, getPoolResp.Pool.BetSummary.TotalAmountBet.NativeAmount)
+	require.EqualValues(t, pool.MaxParticipants*protoPool.BuyIn.NativeAmount, getPoolResp.Pool.BetSummary.TotalAmountBet.NativeAmount)
 
 	protoPool.IsOpen = false
 	protoPool.ClosedAt = &timestamppb.Timestamp{Seconds: time.Now().Unix()}
