@@ -388,6 +388,7 @@ func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId
 
 	var winners []*commonpb.UserId
 	var losers []*commonpb.UserId
+	var refundedUsers []*commonpb.UserId
 	var ammountWon *commonpb.FiatPaymentAmount
 	var ammountLost *commonpb.FiatPaymentAmount
 	for _, bet := range bets {
@@ -402,6 +403,8 @@ func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId
 		case *poolpb.UserPoolSummary_Lose:
 			losers = append(losers, bet.UserID)
 			ammountLost = typed.Lose.AmountLost
+		case *poolpb.UserPoolSummary_Refund:
+			refundedUsers = append(refundedUsers, bet.UserID)
 		}
 	}
 
@@ -410,6 +413,9 @@ func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId
 	}
 	if len(losers) > 0 {
 		go push.SendLostBettingPoolPushes(ctx, s.pusher, pool.Name, ammountLost, losers...)
+	}
+	if len(refundedUsers) > 0 {
+		go push.SendTieBettingPoolPushes(ctx, s.pusher, pool.Name, refundedUsers...)
 	}
 
 	return nil
