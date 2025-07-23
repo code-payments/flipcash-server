@@ -41,8 +41,8 @@ github.com/cockroachdb/cockroach-go/v2 v2.2.0 h1:/5znzg5n373N/3ESjHF5SMLxiW4RKB0
 github.com/cockroachdb/cockroach-go/v2 v2.2.0/go.mod h1:u3MiKYGupPPjkn3ozknpMUpxPaNLTFWAya419/zv6eI=
 github.com/code-payments/code-protobuf-api v1.19.1-0.20250704193024-5320c0a4c394 h1:N7jAqU3A0w4o55xT63ZW5xe14/4jpVb/59OzcW1xvj8=
 github.com/code-payments/code-protobuf-api v1.19.1-0.20250704193024-5320c0a4c394/go.mod h1:ee6TzKbgMS42ZJgaFEMG3c4R3dGOiffHSu6MrY7WQvs=
-github.com/code-payments/code-server v1.10.21-0.20250709133017-8d09996a5182 h1:VSH/W20PtH4Q6WubsoOo7dNCdYOhirxnDDOhiMoIkE8=
-github.com/code-payments/code-server v1.10.21-0.20250709133017-8d09996a5182/go.mod h1:JiUkUNzi642ltnwtHJzhP34kZR7adrI5zyHaE2DB8rQ=
+github.com/code-payments/code-server v1.10.21-0.20250722122818-5b2c9bc52cc0 h1:WPpnwdy894W2X5K8CApeWk+j5l2NswrfsybRZwv8oqk=
+github.com/code-payments/code-server v1.10.21-0.20250722122818-5b2c9bc52cc0/go.mod h1:JiUkUNzi642ltnwtHJzhP34kZR7adrI5zyHaE2DB8rQ=
 github.com/code-payments/code-vm-indexer v0.1.11-0.20241028132209-23031e814fba h1:Bkp+gmeb6Y2PWXfkSCTMBGWkb2P1BujRDSjWeI+0j5I=
 github.com/code-payments/code-vm-indexer v0.1.11-0.20241028132209-23031e814fba/go.mod h1:jSiifpiBpyBQ8q2R0MGEbkSgWC6sbdRTyDBntmW+j1E=
 github.com/code-payments/flipcash-protobuf-api v1.6.6 h1:LPHcgIozV+ptsj5C1UdMTBMpuBGqi+yrlnwzLh2ikB4=

@@ -8,7 +8,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	codecommonpb "github.com/code-payments/code-protobuf-api/generated/go/common/v1"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
@@ -41,6 +40,7 @@ type Server struct {
 	accounts account.Store
 	pools    Store
 	profiles profile.Store
+
 	codeData codedata.Provider
 
 	eventBus *event.Bus[*commonpb.UserId, *eventpb.Event]
@@ -68,6 +68,7 @@ func NewServer(
 		accounts: accounts,
 		pools:    pools,
 		profiles: profiles,
+
 		codeData: codeData,
 
 		eventBus: eventBus,
@@ -390,112 +391,6 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 	}()
 
 	return &poolpb.ResolvePoolResponse{}, nil
-}
-
-func (s *Server) notifyPoolResolution(ctx context.Context, poolID *poolpb.PoolId, ts time.Time) error {
-	pool, err := s.pools.GetPoolByID(ctx, poolID)
-	if err != nil {
-		return err
-	}
-
-	verifiedProtoPool := pool.ToProto().VerifiedMetadata
-
-	betSummary, bets, err := GetBetSummary(ctx, s.pools, s.codeData, pool)
-	if err != nil {
-		return err
-	}
-
-	var winners []*commonpb.UserId
-	var losers []*commonpb.UserId
-	var refundedUsers []*commonpb.UserId
-	var winOutcome *poolpb.UserPoolSummary_WinOutcome
-	var loseOutcome *poolpb.UserPoolSummary_LoseOutcome
-	var refundOutcome *poolpb.UserPoolSummary_RefundOutcome
-	for _, bet := range bets {
-		userSummary, err := getUserSummaryWithCachedBetMetadata(bet.UserID, pool, betSummary, bets)
-		if err != nil {
-			return err
-		}
-		switch typed := userSummary.Outcome.(type) {
-		case *poolpb.UserPoolSummary_Win:
-			winners = append(winners, bet.UserID)
-			winOutcome = typed.Win
-		case *poolpb.UserPoolSummary_Lose:
-			losers = append(losers, bet.UserID)
-			loseOutcome = typed.Lose
-		case *poolpb.UserPoolSummary_Refund:
-			refundedUsers = append(refundedUsers, bet.UserID)
-			refundOutcome = typed.Refund
-		}
-	}
-
-	if len(winners) > 0 {
-		for _, winner := range winners {
-			s.eventBus.OnEvent(winner, &eventpb.Event{
-				Id: event.MustGenerateEventID(),
-				Ts: timestamppb.New(ts),
-				Type: &eventpb.Event_PoolResolved{
-					PoolResolved: &eventpb.PoolResolvedEvent{
-						Pool:       verifiedProtoPool,
-						BetSummary: betSummary,
-						UserSummary: &poolpb.UserPoolSummary{
-							Outcome: &poolpb.UserPoolSummary_Win{
-								Win: winOutcome,
-							},
-						},
-					},
-				},
-			})
-		}
-
-		go push.SendWinBettingPoolPushes(ctx, s.pusher, pool.Name, winOutcome.AmountWon, winners...)
-	}
-
-	if len(losers) > 0 {
-		for _, loser := range losers {
-			s.eventBus.OnEvent(loser, &eventpb.Event{
-				Id: event.MustGenerateEventID(),
-				Ts: timestamppb.New(ts),
-				Type: &eventpb.Event_PoolResolved{
-					PoolResolved: &eventpb.PoolResolvedEvent{
-						Pool:       verifiedProtoPool,
-						BetSummary: betSummary,
-						UserSummary: &poolpb.UserPoolSummary{
-							Outcome: &poolpb.UserPoolSummary_Lose{
-								Lose: loseOutcome,
-							},
-						},
-					},
-				},
-			})
-		}
-
-		go push.SendLostBettingPoolPushes(ctx, s.pusher, pool.Name, loseOutcome.AmountLost, losers...)
-	}
-
-	if len(refundedUsers) > 0 {
-		for _, user := range refundedUsers {
-			s.eventBus.OnEvent(user, &eventpb.Event{
-				Id: event.MustGenerateEventID(),
-				Ts: timestamppb.New(ts),
-				Type: &eventpb.Event_PoolResolved{
-					PoolResolved: &eventpb.PoolResolvedEvent{
-						Pool:       verifiedProtoPool,
-						BetSummary: betSummary,
-						UserSummary: &poolpb.UserPoolSummary{
-							Outcome: &poolpb.UserPoolSummary_Refund{
-								Refund: refundOutcome,
-							},
-						},
-					},
-				},
-			})
-		}
-
-		go push.SendTieBettingPoolPushes(ctx, s.pusher, pool.Name, refundedUsers...)
-	}
-
-	return nil
 }
 
 func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*poolpb.MakeBetResponse, error) {

@@ -36,9 +36,12 @@ var (
 )
 
 type Server struct {
-	log      *zap.Logger
-	authz    auth.Authorizer
-	pools    pool.Store
+	log *zap.Logger
+
+	authz auth.Authorizer
+
+	pools pool.Store
+
 	codeData codedata.Provider
 
 	activitypb.UnimplementedActivityFeedServer
@@ -51,9 +54,12 @@ func NewServer(
 	codeData codedata.Provider,
 ) *Server {
 	return &Server{
-		log:      log,
-		authz:    authz,
-		pools:    pools,
+		log: log,
+
+		authz: authz,
+
+		pools: pools,
+
 		codeData: codeData,
 	}
 }

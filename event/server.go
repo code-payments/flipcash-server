@@ -43,6 +43,12 @@ const (
 	internalRpcApiKeyHeaderName = "x-flipcash-internal-rpc-api-key"
 )
 
+type StaleEventDetectorCtor[Event any] func() StaleEventDetector[Event]
+
+type StaleEventDetector[Event any] interface {
+	ShouldDrop(event Event) bool
+}
+
 type Server struct {
 	log *zap.Logger
 
@@ -53,9 +59,10 @@ type Server struct {
 
 	eventBus *Bus[*commonpb.UserId, *eventpb.Event]
 
-	streamsMu          sync.RWMutex
-	individualStreamMu map[string]*sync.Mutex
-	streams            map[string]Stream[[]*eventpb.Event]
+	streamsMu               sync.RWMutex
+	individualStreamMu      map[string]*sync.Mutex
+	streams                 map[string]Stream[[]*eventpb.Event]
+	staleEventDetectorCtors []StaleEventDetectorCtor[*eventpb.Event]
 
 	broadcastAddress      string
 	allInternalRpcApiKeys map[string]any
@@ -70,6 +77,7 @@ func NewServer(
 	accounts account.Store,
 	events Store,
 	eventBus *Bus[*commonpb.UserId, *eventpb.Event],
+	staleEventDetectorCtors []StaleEventDetectorCtor[*eventpb.Event],
 	broadcastAddress string,
 	currentRpcApiKey string,
 ) *Server {
@@ -83,8 +91,9 @@ func NewServer(
 
 		eventBus: eventBus,
 
-		individualStreamMu: make(map[string]*sync.Mutex),
-		streams:            make(map[string]Stream[[]*eventpb.Event]),
+		individualStreamMu:      make(map[string]*sync.Mutex),
+		streams:                 make(map[string]Stream[[]*eventpb.Event]),
+		staleEventDetectorCtors: staleEventDetectorCtors,
 
 		broadcastAddress:      broadcastAddress,
 		currentRpcApiKey:      currentRpcApiKey,
@@ -154,6 +163,11 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 
 	log.Debug("Initializing stream")
 
+	staleEventDetectors := make([]StaleEventDetector[*eventpb.Event], len(s.staleEventDetectorCtors))
+	for i, ctor := range s.staleEventDetectorCtors {
+		staleEventDetectors[i] = ctor()
+	}
+
 	ss := NewProtoEventStream(
 		streamKey,
 		streamBufferSize,
@@ -167,11 +181,31 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 				return nil, false
 			}
 
-			cloned := protoutil.SliceClone(events)
+			var eventsToSend []*eventpb.Event
 			for _, event := range events {
-				log.With(zap.String("event_id", EventIDString(event.Id))).Debug("Sending event to client in batch")
+				log := log.With(zap.String("event_id", EventIDString(event.Id)))
+
+				var isDropped bool
+				for _, staleEventDetector := range staleEventDetectors {
+					if staleEventDetector.ShouldDrop(event) {
+						isDropped = true
+						break
+					}
+				}
+
+				if isDropped {
+					log.Debug("Dropping stale event")
+					continue
+				}
+
+				log.Debug("Sending event to client in batch")
+				eventsToSend = append(eventsToSend, event)
 			}
-			return &eventpb.EventBatch{Events: cloned}, true
+
+			if len(eventsToSend) == 0 {
+				return nil, false
+			}
+			return &eventpb.EventBatch{Events: eventsToSend}, true
 		},
 	)
 
