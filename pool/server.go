@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	MaxParticipants      = 250
+	MaxParticipants      = 1000
 	defaultMaxPagedPools = 1024
 	maxTsDelta           = time.Minute
 )
