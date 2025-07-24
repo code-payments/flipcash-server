@@ -343,7 +343,7 @@ func (c *clientTestEnv) receiveEventsInRealTime(t *testing.T, userID *commonpb.U
 			case *eventpb.StreamEventsResponse_Ping:
 				err = streamer.stream.Send(&eventpb.StreamEventsRequest{
 					Type: &eventpb.StreamEventsRequest_Pong{
-						Pong: &commonpb.ClientPong{
+						Pong: &eventpb.ClientPong{
 							Timestamp: timestamppb.Now(),
 						},
 					},
@@ -390,7 +390,7 @@ func (c *clientTestEnv) waitUntilStreamTerminationOrTimeout(t *testing.T, userID
 			if keepStreamAlive {
 				require.NoError(t, streamer.stream.Send(&eventpb.StreamEventsRequest{
 					Type: &eventpb.StreamEventsRequest_Pong{
-						Pong: &commonpb.ClientPong{
+						Pong: &eventpb.ClientPong{
 							Timestamp: timestamppb.Now(),
 						},
 					},

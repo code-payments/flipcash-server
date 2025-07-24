@@ -316,7 +316,7 @@ func (s *Server) StreamEvents(stream grpc.BidiStreamingServer[eventpb.StreamEven
 
 			err := stream.Send(&eventpb.StreamEventsResponse{
 				Type: &eventpb.StreamEventsResponse_Ping{
-					Ping: &commonpb.ServerPing{
+					Ping: &eventpb.ServerPing{
 						Timestamp: timestamppb.Now(),
 						PingDelay: durationpb.New(streamPingDelay),
 					},
