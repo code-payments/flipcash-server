@@ -1,4 +1,4 @@
-package ramp
+package thirdparty
 
 import (
 	"crypto/ed25519"
