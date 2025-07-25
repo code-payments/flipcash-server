@@ -22,7 +22,7 @@ const (
 type Server struct {
 	log *zap.Logger
 
-	auth auth.Authorizer
+	authz auth.Authorizer
 
 	accounts account.Store
 	profiles profile.Store
@@ -34,7 +34,7 @@ type Server struct {
 
 func NewServer(
 	log *zap.Logger,
-	auth auth.Authorizer,
+	authz auth.Authorizer,
 	accounts account.Store,
 	profiles profile.Store,
 	verifier Verifier,
@@ -42,7 +42,7 @@ func NewServer(
 	return &Server{
 		log: log,
 
-		auth: auth,
+		authz: authz,
 
 		accounts: accounts,
 		profiles: profiles,
@@ -52,7 +52,7 @@ func NewServer(
 }
 
 func (s *Server) SendVerificationCode(ctx context.Context, req *phonepb.SendVerificationCodeRequest) (*phonepb.SendVerificationCodeResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (s *Server) SendVerificationCode(ctx context.Context, req *phonepb.SendVeri
 }
 
 func (s *Server) CheckVerificationCode(ctx context.Context, req *phonepb.CheckVerificationCodeRequest) (*phonepb.CheckVerificationCodeResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
 	}

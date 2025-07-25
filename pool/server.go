@@ -35,7 +35,7 @@ const (
 type Server struct {
 	log *zap.Logger
 
-	auth auth.Authorizer
+	authz auth.Authorizer
 
 	accounts account.Store
 	pools    Store
@@ -52,7 +52,7 @@ type Server struct {
 
 func NewServer(
 	log *zap.Logger,
-	auth auth.Authorizer,
+	authz auth.Authorizer,
 	accounts account.Store,
 	pools Store,
 	profiles profile.Store,
@@ -63,7 +63,7 @@ func NewServer(
 	return &Server{
 		log: log,
 
-		auth: auth,
+		authz: authz,
 
 		accounts: accounts,
 		pools:    pools,
@@ -79,7 +79,7 @@ func NewServer(
 
 // todo: Add buy in amount validation (min/max)
 func (s *Server) CreatePool(ctx context.Context, req *poolpb.CreatePoolRequest) (*poolpb.CreatePoolResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*pool
 	var userID *commonpb.UserId
 	var err error
 	if req.Auth != nil {
-		userID, err = s.auth.Authorize(ctx, req, &req.Auth)
+		userID, err = s.authz.Authorize(ctx, req, &req.Auth)
 		if err != nil {
 			return nil, err
 		}
@@ -207,7 +207,7 @@ func (s *Server) GetPool(ctx context.Context, req *poolpb.GetPoolRequest) (*pool
 }
 
 func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsRequest) (*poolpb.GetPagedPoolsResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +259,7 @@ func (s *Server) GetPagedPools(ctx context.Context, req *poolpb.GetPagedPoolsReq
 }
 
 func (s *Server) ClosePool(ctx context.Context, req *poolpb.ClosePoolRequest) (*poolpb.ClosePoolResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +323,7 @@ func (s *Server) ClosePool(ctx context.Context, req *poolpb.ClosePoolRequest) (*
 }
 
 func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest) (*poolpb.ResolvePoolResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +394,7 @@ func (s *Server) ResolvePool(ctx context.Context, req *poolpb.ResolvePoolRequest
 }
 
 func (s *Server) MakeBet(ctx context.Context, req *poolpb.MakeBetRequest) (*poolpb.MakeBetResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
 	}

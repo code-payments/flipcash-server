@@ -15,22 +15,22 @@ import (
 
 type Server struct {
 	log    *zap.Logger
-	auth   auth.Authorizer
+	authz  auth.Authorizer
 	tokens TokenStore
 
 	pushpb.UnimplementedPushServer
 }
 
-func NewServer(log *zap.Logger, auth auth.Authorizer, tokens TokenStore) *Server {
+func NewServer(log *zap.Logger, authz auth.Authorizer, tokens TokenStore) *Server {
 	return &Server{
 		log:    log,
-		auth:   auth,
+		authz:  authz,
 		tokens: tokens,
 	}
 }
 
 func (s *Server) AddToken(ctx context.Context, req *pushpb.AddTokenRequest) (*pushpb.AddTokenResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func (s *Server) AddToken(ctx context.Context, req *pushpb.AddTokenRequest) (*pu
 }
 
 func (s *Server) DeleteTokens(ctx context.Context, req *pushpb.DeleteTokensRequest) (*pushpb.DeleteTokensResponse, error) {
-	userID, err := s.auth.Authorize(ctx, req, &req.Auth)
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
 	if err != nil {
 		return nil, err
 	}
