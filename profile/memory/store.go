@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
+	emailpb "github.com/code-payments/flipcash-protobuf-api/generated/go/email/v1"
 	phonepb "github.com/code-payments/flipcash-protobuf-api/generated/go/phone/v1"
 	profilepb "github.com/code-payments/flipcash-protobuf-api/generated/go/profile/v1"
 
@@ -50,6 +51,7 @@ func (m *InMemoryStore) GetProfile(_ context.Context, id *commonpb.UserId, inclu
 
 	if !includePrivateProfile {
 		clonedBaseProfile.PhoneNumber = nil
+		clonedBaseProfile.EmailAddress = nil
 	}
 
 	if len(clonedBaseProfile.DisplayName) == 0 && len(clonedBaseProfile.SocialProfiles) == 0 && clonedBaseProfile.PhoneNumber == nil {
@@ -86,6 +88,22 @@ func (m *InMemoryStore) SetPhoneNumber(_ context.Context, id *commonpb.UserId, p
 	}
 
 	profile.PhoneNumber = &phonepb.PhoneNumber{Value: phoneNumber}
+
+	m.profiles[userIDCacheKey(id)] = profile
+
+	return nil
+}
+
+func (m *InMemoryStore) SetEmailAddress(_ context.Context, id *commonpb.UserId, emailAddress string) error {
+	m.Lock()
+	defer m.Unlock()
+
+	profile, ok := m.profiles[userIDCacheKey(id)]
+	if !ok {
+		profile = &profilepb.UserProfile{}
+	}
+
+	profile.EmailAddress = &emailpb.EmailAddress{Value: emailAddress}
 
 	m.profiles[userIDCacheKey(id)] = profile
 

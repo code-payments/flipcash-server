@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	emailpb "github.com/code-payments/flipcash-protobuf-api/generated/go/email/v1"
 	phonepb "github.com/code-payments/flipcash-protobuf-api/generated/go/phone/v1"
 	profilepb "github.com/code-payments/flipcash-protobuf-api/generated/go/profile/v1"
 
@@ -134,6 +135,7 @@ func testServer(t *testing.T, accounts account.Store, profiles profile.Store) {
 
 		t.Run("Private profile", func(t *testing.T) {
 			require.NoError(t, profiles.SetPhoneNumber(ctx, userID, "+12223334444"))
+			require.NoError(t, profiles.SetEmailAddress(ctx, userID, "someone@gmail.com"))
 
 			get := &profilepb.GetProfileRequest{
 				UserId: userID,
@@ -157,6 +159,7 @@ func testServer(t *testing.T, accounts account.Store, profiles profile.Store) {
 			require.NoError(t, protoutil.ProtoEqualError(expected, getResp.UserProfile))
 
 			expected.PhoneNumber = &phonepb.PhoneNumber{Value: "+12223334444"}
+			expected.EmailAddress = &emailpb.EmailAddress{Value: "someone@gmail.com"}
 			require.NoError(t, keyPair.Auth(get, &get.Auth))
 
 			getResp, err = client.GetProfile(ctx, get)

@@ -110,10 +110,37 @@ func dbGetPhoneNumber(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.
 	return res, nil
 }
 
+func dbGetEmailAddress(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId) (*string, error) {
+	var res *string
+	query := `SELECT "emailAddress" FROM ` + usersTableName + ` WHERE "id" = $1`
+	err := pgxscan.Get(
+		ctx,
+		pool,
+		&res,
+		query,
+		pg.Encode(userID.Value),
+	)
+	if err != nil {
+		if pgxscan.NotFound(err) {
+			return nil, profile.ErrNotFound
+		}
+		return nil, err
+	}
+	return res, nil
+}
+
 func dbSetPhoneNumber(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, phoneNumber string) error {
 	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
-		query := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, NULL, NULL, $2, FALSE, FALSE, NOW(), NOW()) ON CONFLICT ("id") DO UPDATE SET "phoneNumber" = $2 WHERE ` + usersTableName + `."id" = $1`
+		query := `UPDATE ` + usersTableName + ` SET "phoneNumber" = $2 WHERE "id" = $1`
 		_, err := tx.Exec(ctx, query, pg.Encode(userID.Value), phoneNumber)
+		return err
+	})
+}
+
+func dbSetEmailAddress(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, emailAddress string) error {
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		query := `UPDATE ` + usersTableName + ` SET "emailAddress" = $2 WHERE "id" = $1`
+		_, err := tx.Exec(ctx, query, pg.Encode(userID.Value), emailAddress)
 		return err
 	})
 }

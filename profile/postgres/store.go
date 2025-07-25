@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
+	emailpb "github.com/code-payments/flipcash-protobuf-api/generated/go/email/v1"
 	phonepb "github.com/code-payments/flipcash-protobuf-api/generated/go/phone/v1"
 	profilepb "github.com/code-payments/flipcash-protobuf-api/generated/go/profile/v1"
 
@@ -41,6 +42,14 @@ func (s *store) GetProfile(ctx context.Context, id *commonpb.UserId, includePriv
 		if phoneNumber != nil {
 			userProfile.PhoneNumber = &phonepb.PhoneNumber{Value: *phoneNumber}
 		}
+
+		emailAddress, err := dbGetEmailAddress(ctx, s.pool, id)
+		if err != nil {
+			return nil, err
+		}
+		if emailAddress != nil {
+			userProfile.EmailAddress = &emailpb.EmailAddress{Value: *emailAddress}
+		}
 	}
 
 	xProfileModel, err := dbGetXProfile(ctx, s.pool, id)
@@ -71,6 +80,10 @@ func (s *store) SetDisplayName(ctx context.Context, id *commonpb.UserId, display
 
 func (s *store) SetPhoneNumber(ctx context.Context, id *commonpb.UserId, phoneNumber string) error {
 	return dbSetPhoneNumber(ctx, s.pool, id, phoneNumber)
+}
+
+func (s *store) SetEmailAddress(ctx context.Context, id *commonpb.UserId, emailAddress string) error {
+	return dbSetEmailAddress(ctx, s.pool, id, emailAddress)
 }
 
 func (s *store) LinkXAccount(ctx context.Context, userID *commonpb.UserId, xProfile *profilepb.XProfile, accessToken string) error {
@@ -104,12 +117,12 @@ func (s *store) GetXProfile(ctx context.Context, userID *commonpb.UserId) (*prof
 }
 
 func (s *store) reset() {
-	_, err := s.pool.Exec(context.Background(), "DELETE FROM "+xProfilesTableName)
+	_, err := s.pool.Exec(context.Background(), `UPDATE `+usersTableName+` SET "displayName" = NULL, "phoneNumber" = NULL, "emailAddress" = NULL`)
 	if err != nil {
 		panic(err)
 	}
 
-	_, err = s.pool.Exec(context.Background(), `UPDATE `+usersTableName+` SET "displayName" = NULL`)
+	_, err = s.pool.Exec(context.Background(), "DELETE FROM "+xProfilesTableName)
 	if err != nil {
 		panic(err)
 	}
