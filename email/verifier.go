@@ -39,4 +39,8 @@ type Verifier interface {
 
 	// IsVerificationActive checks whether a verification is active or not
 	IsVerificationActive(ctx context.Context, id string) (bool, error)
+
+	// IsValidEmailAddress validates an email address is real and is able to
+	// receive a verification code.
+	IsValidEmailAddress(ctx context.Context, emailAddress string) (bool, error)
 }

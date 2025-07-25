@@ -61,6 +61,13 @@ func (v *verifier) SendCode(ctx context.Context, emailAddress string) (string, e
 	tracer := metrics.TraceMethodCall(ctx, metricsStructName, "SendCode")
 	defer tracer.End()
 
+	isValid, err := v.IsValidEmailAddress(ctx, emailAddress)
+	if err != nil {
+		return "", err
+	} else if !isValid {
+		return "", email.ErrInvalidEmail
+	}
+
 	resp, err := v.client.VerifyV2.CreateVerification(v.serviceSid, &verifyv2.CreateVerificationParams{
 		To:      &emailAddress,
 		Channel: &defaultChannel,
@@ -159,6 +166,11 @@ func (v *verifier) IsVerificationActive(ctx context.Context, id string) (bool, e
 	}
 
 	return *resp.Status == statusPending, nil
+}
+
+// IsValidEmailAddress implements email.Verifier.IsValidEmailAddress
+func (v *verifier) IsValidEmailAddress(_ context.Context, emailAddress string) (bool, error) {
+	return email.IsEmailAddress(emailAddress), nil
 }
 
 func check404Error(inError, outError error) error {
