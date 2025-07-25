@@ -540,7 +540,7 @@ func (s *Server) getProtoPool(
 	protoPool := pool.ToProto()
 	protoPool.IsFundingDestinationInitialized = true
 	if includeUserProfiles {
-		protoPool.CreatorProfile, err = s.profiles.GetProfile(ctx, protoPool.VerifiedMetadata.Creator)
+		protoPool.CreatorProfile, err = s.profiles.GetProfile(ctx, protoPool.VerifiedMetadata.Creator, false)
 		if err != nil && err != profile.ErrNotFound {
 			return nil, err
 		}
@@ -559,7 +559,7 @@ func (s *Server) getProtoPool(
 			protoPool.Bets[i].IsIntentSubmitted = bet.IsIntentSubmitted
 
 			if includeUserProfiles {
-				protoPool.Bets[i].BetterProfile, err = s.profiles.GetProfile(ctx, protoPool.Bets[i].VerifiedMetadata.UserId)
+				protoPool.Bets[i].BetterProfile, err = s.profiles.GetProfile(ctx, protoPool.Bets[i].VerifiedMetadata.UserId, false)
 				if err != nil && err != profile.ErrNotFound {
 					return nil, err
 				}

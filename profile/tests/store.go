@@ -28,20 +28,27 @@ func testStore(t *testing.T, s profile.Store) {
 
 	userID := model.MustGenerateUserID()
 
-	_, err := s.GetProfile(ctx, userID)
+	_, err := s.GetProfile(ctx, userID, false)
 	require.ErrorIs(t, err, profile.ErrNotFound)
 
 	require.NoError(t, s.SetDisplayName(ctx, userID, "my name"))
+	require.NoError(t, s.SetPhoneNumber(ctx, userID, "+12223334444"))
 
-	profile, err := s.GetProfile(ctx, userID)
+	profile, err := s.GetProfile(ctx, userID, false)
 	require.NoError(t, err)
 	require.Equal(t, "my name", profile.DisplayName)
 
 	require.NoError(t, s.SetDisplayName(ctx, userID, "my other name"))
 
-	profile, err = s.GetProfile(ctx, userID)
+	profile, err = s.GetProfile(ctx, userID, false)
 	require.NoError(t, err)
 	require.Equal(t, "my other name", profile.DisplayName)
+	require.Nil(t, profile.PhoneNumber)
+
+	profile, err = s.GetProfile(ctx, userID, true)
+	require.NoError(t, err)
+	require.Equal(t, "my other name", profile.DisplayName)
+	require.Equal(t, "+12223334444", profile.PhoneNumber.Value)
 }
 
 func testXProfiles(t *testing.T, s profile.Store) {
@@ -83,7 +90,7 @@ func testXProfiles(t *testing.T, s profile.Store) {
 	require.NoError(t, err)
 	require.NoError(t, protoutil.ProtoEqualError(expected1, actual))
 
-	fullProfile, err := s.GetProfile(ctx, userID1)
+	fullProfile, err := s.GetProfile(ctx, userID1, false)
 	require.NoError(t, err)
 	require.NoError(t, protoutil.ProtoEqualError(expected1, fullProfile.SocialProfiles[0].GetX()))
 
@@ -97,7 +104,7 @@ func testXProfiles(t *testing.T, s profile.Store) {
 	require.NoError(t, err)
 	require.NoError(t, protoutil.ProtoEqualError(expected1, actual))
 
-	fullProfile, err = s.GetProfile(ctx, userID2)
+	fullProfile, err = s.GetProfile(ctx, userID2, false)
 	require.NoError(t, err)
 	require.NoError(t, protoutil.ProtoEqualError(expected1, fullProfile.SocialProfiles[0].GetX()))
 
@@ -117,7 +124,7 @@ func testXProfiles(t *testing.T, s profile.Store) {
 	require.NoError(t, err)
 	require.NoError(t, protoutil.ProtoEqualError(expected3, actual))
 
-	fullProfile, err = s.GetProfile(ctx, userID2)
+	fullProfile, err = s.GetProfile(ctx, userID2, false)
 	require.NoError(t, err)
 	require.NoError(t, protoutil.ProtoEqualError(expected3, fullProfile.SocialProfiles[0].GetX()))
 
@@ -128,7 +135,7 @@ func testXProfiles(t *testing.T, s profile.Store) {
 	require.NoError(t, err)
 	require.NoError(t, protoutil.ProtoEqualError(expected3, actual))
 
-	fullProfile, err = s.GetProfile(ctx, userID2)
+	fullProfile, err = s.GetProfile(ctx, userID2, false)
 	require.NoError(t, err)
 	require.NoError(t, protoutil.ProtoEqualError(expected3, fullProfile.SocialProfiles[0].GetX()))
 
@@ -137,7 +144,7 @@ func testXProfiles(t *testing.T, s profile.Store) {
 	_, err = s.GetXProfile(ctx, userID2)
 	require.Equal(t, profile.ErrNotFound, err)
 
-	fullProfile, err = s.GetProfile(ctx, userID2)
+	fullProfile, err = s.GetProfile(ctx, userID2, false)
 	require.NoError(t, err)
 	require.Empty(t, fullProfile.SocialProfiles)
 }

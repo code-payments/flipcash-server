@@ -7,7 +7,7 @@ require (
 	github.com/ReneKroon/ttlcache v1.7.0
 	github.com/code-payments/code-protobuf-api v1.19.1-0.20250704193024-5320c0a4c394
 	github.com/code-payments/code-server v1.10.21-0.20250722122818-5b2c9bc52cc0
-	github.com/code-payments/flipcash-protobuf-api v1.7.1
+	github.com/code-payments/flipcash-protobuf-api v1.7.3
 	github.com/devsisters/go-applereceipt v0.0.0-20240805020915-fa22a0160fc2
 	github.com/georgysavva/scany/v2 v2.1.4
 	github.com/google/uuid v1.6.0
@@ -22,6 +22,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/steebchen/prisma-client-go v0.47.0
 	github.com/stretchr/testify v1.10.0
+	github.com/twilio/twilio-go v1.27.0
 	go.uber.org/zap v1.17.0
 	golang.org/x/text v0.24.0
 	google.golang.org/api v0.228.0
@@ -54,6 +55,8 @@ require (
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
+	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect

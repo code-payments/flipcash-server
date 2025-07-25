@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	phonepb "github.com/code-payments/flipcash-protobuf-api/generated/go/phone/v1"
 	profilepb "github.com/code-payments/flipcash-protobuf-api/generated/go/profile/v1"
 
 	"github.com/code-payments/flipcash-server/account"
@@ -46,18 +47,18 @@ func testServer(t *testing.T, accounts account.Store, profiles profile.Store) {
 	keyPair := model.MustGenerateKeyPair()
 
 	t.Run("No User", func(t *testing.T) {
-		get, err := client.GetProfile(ctx, &profilepb.GetProfileRequest{
+		getResp, err := client.GetProfile(ctx, &profilepb.GetProfileRequest{
 			UserId: userID,
 		})
 		require.NoError(t, err)
-		require.Equal(t, profilepb.GetProfileResponse_NOT_FOUND, get.Result)
-		require.Nil(t, get.UserProfile)
+		require.Equal(t, profilepb.GetProfileResponse_NOT_FOUND, getResp.Result)
+		require.Nil(t, getResp.UserProfile)
 
-		req := &profilepb.SetDisplayNameRequest{
+		setDisplayName := &profilepb.SetDisplayNameRequest{
 			DisplayName: "my name",
 		}
-		require.NoError(t, keyPair.Auth(req, &req.Auth))
-		_, err = client.SetDisplayName(ctx, req)
+		require.NoError(t, keyPair.Auth(setDisplayName, &setDisplayName.Auth))
+		_, err = client.SetDisplayName(ctx, setDisplayName)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 
@@ -67,12 +68,12 @@ func testServer(t *testing.T, accounts account.Store, profiles profile.Store) {
 		require.NoError(t, accounts.SetRegistrationFlag(ctx, userID, true))
 
 		// Binding of a user isn't sufficient, a profile must be set!
-		get, err := client.GetProfile(ctx, &profilepb.GetProfileRequest{
+		getResp, err := client.GetProfile(ctx, &profilepb.GetProfileRequest{
 			UserId: userID,
 		})
 		require.NoError(t, err)
-		require.Equal(t, profilepb.GetProfileResponse_NOT_FOUND, get.Result)
-		require.Nil(t, get.UserProfile)
+		require.Equal(t, profilepb.GetProfileResponse_NOT_FOUND, getResp.Result)
+		require.Nil(t, getResp.UserProfile)
 
 		setDisplayName := &profilepb.SetDisplayNameRequest{
 			DisplayName: "my name",
@@ -84,11 +85,11 @@ func testServer(t *testing.T, accounts account.Store, profiles profile.Store) {
 
 		expected := &profilepb.UserProfile{DisplayName: "my name"}
 
-		get, err = client.GetProfile(ctx, &profilepb.GetProfileRequest{
+		getResp, err = client.GetProfile(ctx, &profilepb.GetProfileRequest{
 			UserId: userID,
 		})
 		require.NoError(t, err)
-		require.NoError(t, protoutil.ProtoEqualError(expected, get.UserProfile))
+		require.NoError(t, protoutil.ProtoEqualError(expected, getResp.UserProfile))
 
 		xProfile := &profilepb.XProfile{
 			Id:            "123",
@@ -107,11 +108,11 @@ func testServer(t *testing.T, accounts account.Store, profiles profile.Store) {
 				X: xProfile,
 			},
 		})
-		get, err = client.GetProfile(ctx, &profilepb.GetProfileRequest{
+		getResp, err = client.GetProfile(ctx, &profilepb.GetProfileRequest{
 			UserId: userID,
 		})
 		require.NoError(t, err)
-		require.NoError(t, protoutil.ProtoEqualError(expected, get.UserProfile))
+		require.NoError(t, protoutil.ProtoEqualError(expected, getResp.UserProfile))
 
 		unlink := &profilepb.UnlinkSocialAccountRequest{
 			SocialIdentifier: &profilepb.UnlinkSocialAccountRequest_XUserId{
@@ -125,11 +126,43 @@ func testServer(t *testing.T, accounts account.Store, profiles profile.Store) {
 		require.NoError(t, protoutil.ProtoEqualError(&profilepb.UnlinkSocialAccountResponse{}, unlinkResp))
 
 		expected.SocialProfiles = nil
-		get, err = client.GetProfile(ctx, &profilepb.GetProfileRequest{
+		getResp, err = client.GetProfile(ctx, &profilepb.GetProfileRequest{
 			UserId: userID,
 		})
 		require.NoError(t, err)
-		require.NoError(t, protoutil.ProtoEqualError(expected, get.UserProfile))
+		require.NoError(t, protoutil.ProtoEqualError(expected, getResp.UserProfile))
+
+		t.Run("Private profile", func(t *testing.T) {
+			require.NoError(t, profiles.SetPhoneNumber(ctx, userID, "+12223334444"))
+
+			get := &profilepb.GetProfileRequest{
+				UserId: userID,
+			}
+
+			getResp, err = client.GetProfile(ctx, get)
+			require.NoError(t, err)
+			require.NoError(t, protoutil.ProtoEqualError(expected, getResp.UserProfile))
+
+			otherUserID := model.MustGenerateUserID()
+			otherKeypair := model.MustGenerateKeyPair()
+
+			_, err := accounts.Bind(ctx, otherUserID, otherKeypair.Proto())
+			require.NoError(t, err)
+			require.NoError(t, accounts.SetRegistrationFlag(ctx, otherUserID, true))
+
+			require.NoError(t, otherKeypair.Auth(get, &get.Auth))
+
+			getResp, err = client.GetProfile(ctx, get)
+			require.NoError(t, err)
+			require.NoError(t, protoutil.ProtoEqualError(expected, getResp.UserProfile))
+
+			expected.PhoneNumber = &phonepb.PhoneNumber{Value: "+12223334444"}
+			require.NoError(t, keyPair.Auth(get, &get.Auth))
+
+			getResp, err = client.GetProfile(ctx, get)
+			require.NoError(t, err)
+			require.NoError(t, protoutil.ProtoEqualError(expected, getResp.UserProfile))
+		})
 	})
 
 	t.Run("Unregistered user", func(t *testing.T) {

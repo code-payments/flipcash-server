@@ -18,7 +18,7 @@ import (
 
 const (
 	usersTableName = "flipcash_users"
-	allUserFields  = `"id", "displayName", "isStaff", "isRegistered", "createdAt", "updatedAt"`
+	allUserFields  = `"id", "displayName", "phoneNumber", "emailAddress", "isStaff", "isRegistered", "createdAt", "updatedAt"`
 
 	xProfilesTableName = "flipcash_x_profiles"
 	allXUserFields     = `"id", "username", "name", "description", "profilePicUrl", "followerCount", "verifiedType",  "accessToken", "userId", "createdAt", "updatedAt"`
@@ -85,8 +85,35 @@ func dbGetDisplayName(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.
 
 func dbSetDisplayName(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, displayName string) error {
 	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
-		query := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, $2, FALSE, FALSE, NOW(), NOW()) ON CONFLICT ("id") DO UPDATE SET "displayName" = $2 WHERE ` + usersTableName + `."id" = $1`
+		query := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, $2, NULL, NULL, FALSE, FALSE, NOW(), NOW()) ON CONFLICT ("id") DO UPDATE SET "displayName" = $2 WHERE ` + usersTableName + `."id" = $1`
 		_, err := tx.Exec(ctx, query, pg.Encode(userID.Value), displayName)
+		return err
+	})
+}
+
+func dbGetPhoneNumber(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId) (*string, error) {
+	var res *string
+	query := `SELECT "phoneNumber" FROM ` + usersTableName + ` WHERE "id" = $1`
+	err := pgxscan.Get(
+		ctx,
+		pool,
+		&res,
+		query,
+		pg.Encode(userID.Value),
+	)
+	if err != nil {
+		if pgxscan.NotFound(err) {
+			return nil, profile.ErrNotFound
+		}
+		return nil, err
+	}
+	return res, nil
+}
+
+func dbSetPhoneNumber(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, phoneNumber string) error {
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		query := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, NULL, NULL, $2, FALSE, FALSE, NOW(), NOW()) ON CONFLICT ("id") DO UPDATE SET "phoneNumber" = $2 WHERE ` + usersTableName + `."id" = $1`
+		_, err := tx.Exec(ctx, query, pg.Encode(userID.Value), phoneNumber)
 		return err
 	})
 }

@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
+	phonepb "github.com/code-payments/flipcash-protobuf-api/generated/go/phone/v1"
 	profilepb "github.com/code-payments/flipcash-protobuf-api/generated/go/profile/v1"
 
 	"github.com/code-payments/flipcash-server/profile"
@@ -27,18 +28,18 @@ func NewInMemory() profile.Store {
 	}
 }
 
-func (m *InMemoryStore) GetProfile(_ context.Context, id *commonpb.UserId) (*profilepb.UserProfile, error) {
+func (m *InMemoryStore) GetProfile(_ context.Context, id *commonpb.UserId, includePrivateProfile bool) (*profilepb.UserProfile, error) {
 	m.Lock()
 	defer m.Unlock()
 
-	baseProfile, hasBaseProfile := m.profiles[userIDCacheKey(id)]
+	baseProfile, ok := m.profiles[userIDCacheKey(id)]
 	clonedBaseProfile := &profilepb.UserProfile{}
-	if hasBaseProfile {
+	if ok {
 		clonedBaseProfile = proto.Clone(baseProfile).(*profilepb.UserProfile)
 	}
 
-	xProfile, hasXProfile := m.xProfilesByUser[userIDCacheKey(id)]
-	if hasXProfile {
+	xProfile, ok := m.xProfilesByUser[userIDCacheKey(id)]
+	if ok {
 		clonedXProfile := proto.Clone(xProfile).(*profilepb.XProfile)
 		clonedBaseProfile.SocialProfiles = append(clonedBaseProfile.SocialProfiles, &profilepb.SocialProfile{
 			Type: &profilepb.SocialProfile_X{
@@ -47,7 +48,11 @@ func (m *InMemoryStore) GetProfile(_ context.Context, id *commonpb.UserId) (*pro
 		})
 	}
 
-	if !hasBaseProfile && !hasXProfile {
+	if !includePrivateProfile {
+		clonedBaseProfile.PhoneNumber = nil
+	}
+
+	if len(clonedBaseProfile.DisplayName) == 0 && len(clonedBaseProfile.SocialProfiles) == 0 && clonedBaseProfile.PhoneNumber == nil {
 		return nil, profile.ErrNotFound
 	}
 
@@ -65,6 +70,22 @@ func (m *InMemoryStore) SetDisplayName(_ context.Context, id *commonpb.UserId, d
 
 	// TODO: Validate eventually
 	profile.DisplayName = displayName
+
+	m.profiles[userIDCacheKey(id)] = profile
+
+	return nil
+}
+
+func (m *InMemoryStore) SetPhoneNumber(_ context.Context, id *commonpb.UserId, phoneNumber string) error {
+	m.Lock()
+	defer m.Unlock()
+
+	profile, ok := m.profiles[userIDCacheKey(id)]
+	if !ok {
+		profile = &profilepb.UserProfile{}
+	}
+
+	profile.PhoneNumber = &phonepb.PhoneNumber{Value: phoneNumber}
 
 	m.profiles[userIDCacheKey(id)] = profile
 

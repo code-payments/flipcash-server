@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	profilepb "github.com/code-payments/flipcash-protobuf-api/generated/go/profile/v1"
 
 	"github.com/code-payments/flipcash-server/account"
@@ -44,11 +46,21 @@ func NewServer(log *zap.Logger, authz auth.Authorizer, accounts account.Store, p
 }
 
 func (s *Server) GetProfile(ctx context.Context, req *profilepb.GetProfileRequest) (*profilepb.GetProfileResponse, error) {
-	log := s.log.With(
-		zap.String("user_id", model.UserIDString(req.UserId)),
-	)
+	log := s.log.With(zap.String("user_id", model.UserIDString(req.UserId)))
 
-	profile, err := s.profiles.GetProfile(ctx, req.UserId)
+	var requestingUserID *commonpb.UserId
+	var err error
+	if req.Auth != nil {
+		requestingUserID, err = s.authz.Authorize(ctx, req, &req.Auth)
+		if err != nil {
+			return nil, err
+		}
+		log = s.log.With(zap.String("requesting_user_id", model.UserIDString(req.UserId)))
+	}
+
+	includePrivateFields := requestingUserID != nil && bytes.Equal(req.UserId.Value, requestingUserID.Value)
+
+	profile, err := s.profiles.GetProfile(ctx, req.UserId, includePrivateFields)
 	if errors.Is(err, ErrNotFound) {
 		return &profilepb.GetProfileResponse{Result: profilepb.GetProfileResponse_NOT_FOUND}, nil
 	} else if err != nil {

@@ -5,10 +5,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/code-payments/code-server/pkg/pointer"
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
+	phonepb "github.com/code-payments/flipcash-protobuf-api/generated/go/phone/v1"
 	profilepb "github.com/code-payments/flipcash-protobuf-api/generated/go/profile/v1"
 
+	"github.com/code-payments/code-server/pkg/pointer"
 	"github.com/code-payments/flipcash-server/profile"
 )
 
@@ -22,7 +23,7 @@ func NewInPostgres(pool *pgxpool.Pool) profile.Store {
 	}
 }
 
-func (s *store) GetProfile(ctx context.Context, id *commonpb.UserId) (*profilepb.UserProfile, error) {
+func (s *store) GetProfile(ctx context.Context, id *commonpb.UserId, includePrivateProfile bool) (*profilepb.UserProfile, error) {
 	displayName, err := dbGetDisplayName(ctx, s.pool, id)
 	if err != nil {
 		return nil, err
@@ -30,6 +31,16 @@ func (s *store) GetProfile(ctx context.Context, id *commonpb.UserId) (*profilepb
 
 	userProfile := &profilepb.UserProfile{
 		DisplayName: *pointer.StringOrDefault(displayName, ""),
+	}
+
+	if includePrivateProfile {
+		phoneNumber, err := dbGetPhoneNumber(ctx, s.pool, id)
+		if err != nil {
+			return nil, err
+		}
+		if phoneNumber != nil {
+			userProfile.PhoneNumber = &phonepb.PhoneNumber{Value: *phoneNumber}
+		}
 	}
 
 	xProfileModel, err := dbGetXProfile(ctx, s.pool, id)
@@ -48,7 +59,7 @@ func (s *store) GetProfile(ctx context.Context, id *commonpb.UserId) (*profilepb
 		return nil, err
 	}
 
-	if len(userProfile.DisplayName) == 0 && len(userProfile.SocialProfiles) == 0 {
+	if len(userProfile.DisplayName) == 0 && len(userProfile.SocialProfiles) == 0 && userProfile.PhoneNumber == nil {
 		return nil, profile.ErrNotFound
 	}
 	return userProfile, nil
@@ -56,6 +67,10 @@ func (s *store) GetProfile(ctx context.Context, id *commonpb.UserId) (*profilepb
 
 func (s *store) SetDisplayName(ctx context.Context, id *commonpb.UserId, displayName string) error {
 	return dbSetDisplayName(ctx, s.pool, id, displayName)
+}
+
+func (s *store) SetPhoneNumber(ctx context.Context, id *commonpb.UserId, phoneNumber string) error {
+	return dbSetPhoneNumber(ctx, s.pool, id, phoneNumber)
 }
 
 func (s *store) LinkXAccount(ctx context.Context, userID *commonpb.UserId, xProfile *profilepb.XProfile, accessToken string) error {

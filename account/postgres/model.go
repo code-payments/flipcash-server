@@ -16,7 +16,7 @@ import (
 
 const (
 	usersTableName = "flipcash_users"
-	allUserFields  = `"id", "displayName", "isStaff", "isRegistered", "createdAt", "updatedAt"`
+	allUserFields  = `"id", "displayName", "phoneNumber", "emailAddress", "isStaff", "isRegistered", "createdAt", "updatedAt"`
 
 	publicKeysTableName = "flipcash_publickeys"
 	allPublicKeyFields  = `"key", "userId", "createdAt", "updatedAt"`
@@ -24,7 +24,7 @@ const (
 
 func dbBind(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, pubKey *commonpb.PublicKey) error {
 	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
-		upsertUserQuery := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, NULL, FALSE, FALSE, NOW(), NOW()) ON CONFLICT ("id") DO NOTHING`
+		upsertUserQuery := `INSERT INTO ` + usersTableName + ` (` + allUserFields + `) VALUES ($1, NULL, NULL, NULL, FALSE, FALSE, NOW(), NOW()) ON CONFLICT ("id") DO NOTHING`
 		_, err := tx.Exec(ctx, upsertUserQuery, pg.Encode(userID.Value))
 		if err != nil {
 			return err
