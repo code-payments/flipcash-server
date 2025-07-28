@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -22,6 +23,18 @@ import (
 const (
 	loginWindow                 = 2 * time.Minute
 	requireIapOnAccountCreation = false
+)
+
+var (
+	allOnrampProviders = []accountpb.UserFlags_OnRampProvider{
+		accountpb.UserFlags_COINBASE,
+	}
+	supportedOnRampProviders = map[string]map[commonpb.Platform][]accountpb.UserFlags_OnRampProvider{
+		"us": {
+			commonpb.Platform_APPLE:  []accountpb.UserFlags_OnRampProvider{accountpb.UserFlags_COINBASE},
+			commonpb.Platform_GOOGLE: []accountpb.UserFlags_OnRampProvider{accountpb.UserFlags_COINBASE},
+		},
+	}
 )
 
 type Server struct {
@@ -151,12 +164,42 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 		return nil, status.Errorf(codes.Internal, "failed to get registration flag")
 	}
 
+	var supportedOnRampProvidersForUser []accountpb.UserFlags_OnRampProvider
+	if isStaff {
+		supportedOnRampProvidersForUser = allOnrampProviders
+	} else {
+		supportedOnRampProvidersForUser = getSupportedOnRampProviders(req.CountryCode, req.Platform)
+	}
+
 	return &accountpb.GetUserFlagsResponse{
 		Result: accountpb.GetUserFlagsResponse_OK,
 		UserFlags: &accountpb.UserFlags{
 			IsStaff:                    isStaff,
 			IsRegisteredAccount:        isRegistered,
 			RequiresIapForRegistration: requireIapOnAccountCreation,
+			SupportedOnRampProviders:   supportedOnRampProvidersForUser,
 		},
 	}, nil
+}
+
+func getSupportedOnRampProviders(countryCode *commonpb.CountryCode, platform commonpb.Platform) []accountpb.UserFlags_OnRampProvider {
+	if countryCode == nil {
+		return nil
+	}
+
+	if platform == commonpb.Platform_UNKNOWN {
+		return nil
+	}
+
+	byCountry, ok := supportedOnRampProviders[strings.ToLower(countryCode.Value)]
+	if !ok {
+		return nil
+	}
+
+	byPlatform, ok := byCountry[platform]
+	if !ok {
+		return nil
+	}
+
+	return byPlatform
 }
