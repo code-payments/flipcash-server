@@ -26,13 +26,22 @@ const (
 )
 
 var (
-	allOnrampProviders = []accountpb.UserFlags_OnRampProvider{
-		accountpb.UserFlags_COINBASE,
+	allAppleOnrampProviders = []accountpb.UserFlags_OnRampProvider{
+		accountpb.UserFlags_COINBASE_VIRTUAL,
+		accountpb.UserFlags_COINBASE_PHYSICAL_DEBIT,
+	}
+	allGoogleOnrampProviders = []accountpb.UserFlags_OnRampProvider{
+		accountpb.UserFlags_COINBASE_PHYSICAL_DEBIT,
 	}
 	supportedOnRampProviders = map[string]map[commonpb.Platform][]accountpb.UserFlags_OnRampProvider{
 		"us": {
-			commonpb.Platform_APPLE:  []accountpb.UserFlags_OnRampProvider{accountpb.UserFlags_COINBASE},
-			commonpb.Platform_GOOGLE: []accountpb.UserFlags_OnRampProvider{accountpb.UserFlags_COINBASE},
+			commonpb.Platform_APPLE: []accountpb.UserFlags_OnRampProvider{
+				accountpb.UserFlags_COINBASE_VIRTUAL,
+				accountpb.UserFlags_COINBASE_PHYSICAL_DEBIT,
+			},
+			commonpb.Platform_GOOGLE: []accountpb.UserFlags_OnRampProvider{
+				accountpb.UserFlags_COINBASE_PHYSICAL_DEBIT,
+			},
 		},
 	}
 )
@@ -166,7 +175,12 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 
 	var supportedOnRampProvidersForUser []accountpb.UserFlags_OnRampProvider
 	if isStaff {
-		supportedOnRampProvidersForUser = allOnrampProviders
+		switch req.Platform {
+		case commonpb.Platform_APPLE:
+			supportedOnRampProvidersForUser = allAppleOnrampProviders
+		case commonpb.Platform_GOOGLE:
+			supportedOnRampProvidersForUser = allGoogleOnrampProviders
+		}
 	} else {
 		supportedOnRampProvidersForUser = getSupportedOnRampProviders(req.CountryCode, req.Platform)
 	}
