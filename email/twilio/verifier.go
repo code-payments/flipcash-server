@@ -3,6 +3,7 @@ package twilio
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -39,20 +40,22 @@ var (
 )
 
 type verifier struct {
-	client     *twilio.RestClient
-	serviceSid string
+	client        *twilio.RestClient
+	serviceSid    string
+	baseVerifyURL string
 }
 
 // NewVerifier returns a new email verifier backed by Twilio
-func NewVerifier(accountSid, serviceSid, authToken string) email.Verifier {
+func NewVerifier(baseVerifyURL, accountSid, serviceSid, authToken string) email.Verifier {
 	client := twilio.NewRestClientWithParams(twilio.ClientParams{
 		Username: accountSid,
 		Password: authToken,
 	})
 
 	return &verifier{
-		client:     client,
-		serviceSid: serviceSid,
+		client:        client,
+		serviceSid:    serviceSid,
+		baseVerifyURL: baseVerifyURL,
 	}
 }
 
@@ -68,9 +71,16 @@ func (v *verifier) SendCode(ctx context.Context, emailAddress string) (string, e
 		return "", email.ErrInvalidEmail
 	}
 
+	var channelConfig interface{} = map[string]any{
+		"substitutions": map[string]any{
+			"verification_url":         v.baseVerifyURL,
+			"url_safe_recipient_email": url.QueryEscape(emailAddress),
+		},
+	}
 	resp, err := v.client.VerifyV2.CreateVerification(v.serviceSid, &verifyv2.CreateVerificationParams{
-		To:      &emailAddress,
-		Channel: &defaultChannel,
+		To:                   &emailAddress,
+		Channel:              &defaultChannel,
+		ChannelConfiguration: &channelConfig,
 	})
 	if err != nil {
 		err = checkInvalidToParameterError(err, email.ErrInvalidEmail)
