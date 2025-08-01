@@ -26,23 +26,21 @@ const (
 )
 
 var (
-	allAppleOnrampProviders = []accountpb.UserFlags_OnRampProvider{
+	defaultOnRampProviders = []accountpb.UserFlags_OnRampProvider{
+		accountpb.UserFlags_CRYPTO_WALLET,
+	}
+	onRampProvidersByCountry = map[string]map[commonpb.Platform][]accountpb.UserFlags_OnRampProvider{}
+
+	staffAppleOnRampProviders = []accountpb.UserFlags_OnRampProvider{
 		accountpb.UserFlags_COINBASE_VIRTUAL,
 		accountpb.UserFlags_COINBASE_PHYSICAL_DEBIT,
+		accountpb.UserFlags_CRYPTO_WALLET,
+		accountpb.UserFlags_PHANTOM,
 	}
-	allGoogleOnrampProviders = []accountpb.UserFlags_OnRampProvider{
+	staffGoogleOnRampProviders = []accountpb.UserFlags_OnRampProvider{
 		accountpb.UserFlags_COINBASE_PHYSICAL_DEBIT,
-	}
-	supportedOnRampProviders = map[string]map[commonpb.Platform][]accountpb.UserFlags_OnRampProvider{
-		"us": {
-			commonpb.Platform_APPLE: []accountpb.UserFlags_OnRampProvider{
-				accountpb.UserFlags_COINBASE_VIRTUAL,
-				accountpb.UserFlags_COINBASE_PHYSICAL_DEBIT,
-			},
-			commonpb.Platform_GOOGLE: []accountpb.UserFlags_OnRampProvider{
-				accountpb.UserFlags_COINBASE_PHYSICAL_DEBIT,
-			},
-		},
+		accountpb.UserFlags_CRYPTO_WALLET,
+		accountpb.UserFlags_PHANTOM,
 	}
 )
 
@@ -177,9 +175,9 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 	if isStaff {
 		switch req.Platform {
 		case commonpb.Platform_APPLE:
-			supportedOnRampProvidersForUser = allAppleOnrampProviders
+			supportedOnRampProvidersForUser = staffAppleOnRampProviders
 		case commonpb.Platform_GOOGLE:
-			supportedOnRampProvidersForUser = allGoogleOnrampProviders
+			supportedOnRampProvidersForUser = staffGoogleOnRampProviders
 		}
 	} else {
 		supportedOnRampProvidersForUser = getSupportedOnRampProviders(req.CountryCode, req.Platform)
@@ -197,23 +195,26 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 }
 
 func getSupportedOnRampProviders(countryCode *commonpb.CountryCode, platform commonpb.Platform) []accountpb.UserFlags_OnRampProvider {
+	supported := make([]accountpb.UserFlags_OnRampProvider, len(defaultOnRampProviders))
+	copy(supported, defaultOnRampProviders)
+
 	if countryCode == nil {
-		return nil
+		return supported
 	}
 
 	if platform == commonpb.Platform_UNKNOWN {
-		return nil
+		return supported
 	}
 
-	byCountry, ok := supportedOnRampProviders[strings.ToLower(countryCode.Value)]
+	byCountry, ok := onRampProvidersByCountry[strings.ToLower(countryCode.Value)]
 	if !ok {
-		return nil
+		return supported
 	}
 
 	byPlatform, ok := byCountry[platform]
 	if !ok {
-		return nil
+		return supported
 	}
 
-	return byPlatform
+	return append(supported, byPlatform...)
 }
