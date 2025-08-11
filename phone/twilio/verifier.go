@@ -232,9 +232,9 @@ func (v *verifier) checkValidPhoneNumber(phoneNumber string) error {
 		return nil
 	}
 
-	// todo: It's safest to block all virtual numbers, but confirm with Twilio
-	//       if there are cases where we'd want this to go through.
-	if metadata.Type != phone.TypeMobile {
+	switch metadata.Type {
+	case phone.TypeMobile, phone.TypeVoip:
+	default:
 		return phone.ErrUnsupportedPhoneType
 	}
 	return nil
