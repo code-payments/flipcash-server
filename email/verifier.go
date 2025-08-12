@@ -27,7 +27,7 @@ type Verifier interface {
 	// SendCode sends a verification code via email to the provided email address.
 	// If an active verification is already taking place, the existing code will
 	// be resent. A unique ID for the verification is returned on success.
-	SendCode(ctx context.Context, emailAddress string) (string, error)
+	SendCode(ctx context.Context, emailAddress, clientData string) (string, error)
 
 	// Check verifies a email code sent to an email address.
 	Check(ctx context.Context, emailAddress, code string) error

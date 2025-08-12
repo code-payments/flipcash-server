@@ -68,7 +68,7 @@ func (s *Server) SendVerificationCode(ctx context.Context, req *emailpb.SendVeri
 	}
 
 	var result emailpb.SendVerificationCodeResponse_Result
-	_, err = s.verifier.SendCode(ctx, req.EmailAddress.Value)
+	_, err = s.verifier.SendCode(ctx, req.EmailAddress.Value, req.ClientData)
 	switch err {
 	case nil:
 		result = emailpb.SendVerificationCodeResponse_OK

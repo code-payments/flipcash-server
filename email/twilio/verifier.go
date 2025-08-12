@@ -60,7 +60,7 @@ func NewVerifier(baseVerifyURL, accountSid, serviceSid, authToken string) email.
 }
 
 // SendCode implements email.Verifier.SendCode
-func (v *verifier) SendCode(ctx context.Context, emailAddress string) (string, error) {
+func (v *verifier) SendCode(ctx context.Context, emailAddress, clientData string) (string, error) {
 	tracer := metrics.TraceMethodCall(ctx, metricsStructName, "SendCode")
 	defer tracer.End()
 
@@ -75,6 +75,7 @@ func (v *verifier) SendCode(ctx context.Context, emailAddress string) (string, e
 		"substitutions": map[string]any{
 			"verification_url":         v.baseVerifyURL,
 			"url_safe_recipient_email": url.QueryEscape(emailAddress),
+			"client_data":              url.QueryEscape(clientData),
 		},
 	}
 	resp, err := v.client.VerifyV2.CreateVerification(v.serviceSid, &verifyv2.CreateVerificationParams{
