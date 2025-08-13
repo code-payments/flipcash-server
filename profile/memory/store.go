@@ -94,6 +94,22 @@ func (m *InMemoryStore) SetPhoneNumber(_ context.Context, id *commonpb.UserId, p
 	return nil
 }
 
+func (m *InMemoryStore) UnlinkPhoneNumber(ctx context.Context, userID *commonpb.UserId, phoneNumber string) error {
+	m.Lock()
+	defer m.Unlock()
+
+	profile, ok := m.profiles[userIDCacheKey(userID)]
+	if !ok {
+		return nil
+	}
+
+	if profile.PhoneNumber != nil && profile.PhoneNumber.Value == phoneNumber {
+		profile.PhoneNumber = nil
+	}
+
+	return nil
+}
+
 func (m *InMemoryStore) SetEmailAddress(_ context.Context, id *commonpb.UserId, emailAddress string) error {
 	m.Lock()
 	defer m.Unlock()
@@ -106,6 +122,22 @@ func (m *InMemoryStore) SetEmailAddress(_ context.Context, id *commonpb.UserId, 
 	profile.EmailAddress = &emailpb.EmailAddress{Value: emailAddress}
 
 	m.profiles[userIDCacheKey(id)] = profile
+
+	return nil
+}
+
+func (m *InMemoryStore) UnlinkEmailAddress(ctx context.Context, userID *commonpb.UserId, emailAddress string) error {
+	m.Lock()
+	defer m.Unlock()
+
+	profile, ok := m.profiles[userIDCacheKey(userID)]
+	if !ok {
+		return nil
+	}
+
+	if profile.EmailAddress != nil && profile.EmailAddress.Value == emailAddress {
+		profile.EmailAddress = nil
+	}
 
 	return nil
 }

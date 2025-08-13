@@ -24,8 +24,14 @@ type Store interface {
 	// SetPhoneNumber sets the phone number for a user, provided they exist.
 	SetPhoneNumber(ctx context.Context, id *commonpb.UserId, phoneNumber string) error
 
+	// UnlinkPhoneNumber removes the link for the phone number
+	UnlinkPhoneNumber(ctx context.Context, userID *commonpb.UserId, phoneNumber string) error
+
 	// SetEmailAddress sets the email address for a user, provided they exist.
 	SetEmailAddress(ctx context.Context, id *commonpb.UserId, emailAddress string) error
+
+	// UnlinkPhoneNumber removes the link for the email address
+	UnlinkEmailAddress(ctx context.Context, userID *commonpb.UserId, emailAddress string) error
 
 	// LinkXAccount links a X account to a user ID
 	LinkXAccount(ctx context.Context, userID *commonpb.UserId, xProfile *profilepb.XProfile, accessToken string) error

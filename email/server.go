@@ -128,3 +128,32 @@ func (s *Server) CheckVerificationCode(ctx context.Context, req *emailpb.CheckVe
 		Result: result,
 	}, nil
 }
+
+func (s *Server) Unlink(ctx context.Context, req *emailpb.UnlinkRequest) (*emailpb.UnlinkResponse, error) {
+	userID, err := s.authz.Authorize(ctx, req, &req.Auth)
+	if err != nil {
+		return nil, err
+	}
+
+	log := s.log.With(
+		zap.String("user_id", model.UserIDString(userID)),
+		zap.String("email_address", req.EmailAddress.Value),
+	)
+
+	isRegistered, err := s.accounts.IsRegistered(ctx, userID)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure getting user registration status")
+		return nil, status.Error(codes.Internal, "failure getting user registration status")
+	}
+	if !isRegistered {
+		return &emailpb.UnlinkResponse{Result: emailpb.UnlinkResponse_DENIED}, nil
+	}
+
+	err = s.profiles.UnlinkEmailAddress(ctx, userID, req.EmailAddress.Value)
+	if err != nil {
+		log.With(zap.Error(err)).Warn("Failure unlinking email address")
+		return nil, status.Error(codes.Internal, "failure unlinking email address")
+	}
+
+	return &emailpb.UnlinkResponse{}, nil
+}

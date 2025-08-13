@@ -82,8 +82,16 @@ func (s *store) SetPhoneNumber(ctx context.Context, id *commonpb.UserId, phoneNu
 	return dbSetPhoneNumber(ctx, s.pool, id, phoneNumber)
 }
 
+func (s *store) UnlinkPhoneNumber(ctx context.Context, userID *commonpb.UserId, phoneNumber string) error {
+	return dbUnlinkPhoneNumber(ctx, s.pool, userID, phoneNumber)
+}
+
 func (s *store) SetEmailAddress(ctx context.Context, id *commonpb.UserId, emailAddress string) error {
 	return dbSetEmailAddress(ctx, s.pool, id, emailAddress)
+}
+
+func (s *store) UnlinkEmailAddress(ctx context.Context, userID *commonpb.UserId, emailAddress string) error {
+	return dbUnlinkEmailAddress(ctx, s.pool, userID, emailAddress)
 }
 
 func (s *store) LinkXAccount(ctx context.Context, userID *commonpb.UserId, xProfile *profilepb.XProfile, accessToken string) error {

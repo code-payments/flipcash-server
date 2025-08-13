@@ -137,9 +137,25 @@ func dbSetPhoneNumber(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.
 	})
 }
 
+func dbUnlinkPhoneNumber(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, phoneNumber string) error {
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		query := `UPDATE ` + usersTableName + ` SET "phoneNumber" = NULL WHERE "id" = $1 AND "phoneNumber" = $2`
+		_, err := tx.Exec(ctx, query, pg.Encode(userID.Value), phoneNumber)
+		return err
+	})
+}
+
 func dbSetEmailAddress(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, emailAddress string) error {
 	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
 		query := `UPDATE ` + usersTableName + ` SET "emailAddress" = $2 WHERE "id" = $1`
+		_, err := tx.Exec(ctx, query, pg.Encode(userID.Value), emailAddress)
+		return err
+	})
+}
+
+func dbUnlinkEmailAddress(ctx context.Context, pool *pgxpool.Pool, userID *commonpb.UserId, emailAddress string) error {
+	return pg.ExecuteInTx(ctx, pool, func(tx pgx.Tx) error {
+		query := `UPDATE ` + usersTableName + ` SET "emailAddress" = NULL WHERE "id" = $1 AND "emailAddress" = $2`
 		_, err := tx.Exec(ctx, query, pg.Encode(userID.Value), emailAddress)
 		return err
 	})

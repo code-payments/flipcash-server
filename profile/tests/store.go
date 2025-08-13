@@ -31,6 +31,9 @@ func testStore(t *testing.T, s profile.Store) {
 	_, err := s.GetProfile(ctx, userID, false)
 	require.ErrorIs(t, err, profile.ErrNotFound)
 
+	require.NoError(t, s.UnlinkPhoneNumber(ctx, userID, "+12223334444"))
+	require.NoError(t, s.UnlinkEmailAddress(ctx, userID, "someone@gmail.com"))
+
 	require.NoError(t, s.SetDisplayName(ctx, userID, "my name"))
 	require.NoError(t, s.SetPhoneNumber(ctx, userID, "+12223334444"))
 	require.NoError(t, s.SetEmailAddress(ctx, userID, "someone@gmail.com"))
@@ -52,6 +55,30 @@ func testStore(t *testing.T, s profile.Store) {
 	require.Equal(t, "my other name", profile.DisplayName)
 	require.Equal(t, "+12223334444", profile.PhoneNumber.Value)
 	require.Equal(t, "someone@gmail.com", profile.EmailAddress.Value)
+
+	require.NoError(t, s.UnlinkPhoneNumber(ctx, userID, "+15556667777"))
+	require.NoError(t, s.UnlinkEmailAddress(ctx, userID, "someone.else@gmail.com"))
+
+	profile, err = s.GetProfile(ctx, userID, true)
+	require.NoError(t, err)
+	require.Equal(t, "my other name", profile.DisplayName)
+	require.Equal(t, "+12223334444", profile.PhoneNumber.Value)
+	require.Equal(t, "someone@gmail.com", profile.EmailAddress.Value)
+
+	require.NoError(t, s.UnlinkPhoneNumber(ctx, userID, "+12223334444"))
+
+	profile, err = s.GetProfile(ctx, userID, true)
+	require.NoError(t, err)
+	require.Nil(t, profile.PhoneNumber)
+	require.NotNil(t, profile.EmailAddress)
+
+	require.NoError(t, s.UnlinkEmailAddress(ctx, userID, "someone@gmail.com"))
+
+	profile, err = s.GetProfile(ctx, userID, true)
+	require.NoError(t, err)
+	require.Nil(t, profile.PhoneNumber)
+	require.Nil(t, profile.EmailAddress)
+
 }
 
 func testXProfiles(t *testing.T, s profile.Store) {
