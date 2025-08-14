@@ -33,12 +33,12 @@ var (
 
 	staffAppleOnRampProviders = []accountpb.UserFlags_OnRampProvider{
 		accountpb.UserFlags_COINBASE_VIRTUAL,
-		accountpb.UserFlags_CRYPTO_WALLET,
 		accountpb.UserFlags_PHANTOM,
+		accountpb.UserFlags_CRYPTO_WALLET,
 	}
 	staffGoogleOnRampProviders = []accountpb.UserFlags_OnRampProvider{
-		accountpb.UserFlags_CRYPTO_WALLET,
 		accountpb.UserFlags_PHANTOM,
+		accountpb.UserFlags_CRYPTO_WALLET,
 	}
 )
 
