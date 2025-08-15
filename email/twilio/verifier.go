@@ -73,6 +73,7 @@ func (v *verifier) SendCode(ctx context.Context, emailAddress, clientData string
 
 	var channelConfig interface{} = map[string]any{
 		"substitutions": map[string]any{
+			"recipient_email":          emailAddress,
 			"verification_url":         v.baseVerifyURL,
 			"url_safe_recipient_email": url.QueryEscape(emailAddress),
 			"client_data":              url.QueryEscape(clientData),
