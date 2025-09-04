@@ -169,6 +169,7 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 		return nil, status.Errorf(codes.Internal, "failed to get registration flag")
 	}
 
+	var preferredOnRampProviderForUser accountpb.UserFlags_OnRampProvider
 	var supportedOnRampProvidersForUser []accountpb.UserFlags_OnRampProvider
 	if isStaff {
 		switch req.Platform {
@@ -180,6 +181,12 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 	} else {
 		supportedOnRampProvidersForUser = getSupportedOnRampProviders(req.CountryCode, req.Platform)
 	}
+	for _, onRampProvider := range supportedOnRampProvidersForUser {
+		if onRampProvider == accountpb.UserFlags_COINBASE_VIRTUAL {
+			preferredOnRampProviderForUser = accountpb.UserFlags_COINBASE_VIRTUAL
+			break
+		}
+	}
 
 	return &accountpb.GetUserFlagsResponse{
 		Result: accountpb.GetUserFlagsResponse_OK,
@@ -188,6 +195,7 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 			IsRegisteredAccount:        isRegistered,
 			RequiresIapForRegistration: requireIapOnAccountCreation,
 			SupportedOnRampProviders:   supportedOnRampProvidersForUser,
+			PreferredOnRampProvider:    preferredOnRampProviderForUser,
 		},
 	}, nil
 }
