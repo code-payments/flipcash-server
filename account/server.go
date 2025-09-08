@@ -27,6 +27,7 @@ const (
 
 var (
 	defaultOnRampProviders = []accountpb.UserFlags_OnRampProvider{
+		accountpb.UserFlags_PHANTOM,
 		accountpb.UserFlags_CRYPTO_WALLET,
 	}
 	onRampProvidersByCountry = map[string]map[commonpb.Platform][]accountpb.UserFlags_OnRampProvider{}
