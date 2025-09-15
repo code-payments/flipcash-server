@@ -27,7 +27,7 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 		localizedText = "Withdrew"
 
 	case *activitypb.Notification_DepositedUsdc:
-		localizedText = "Deposited"
+		localizedText = "Added"
 
 	case *activitypb.Notification_PaidUsdc:
 		switch typed.PaidUsdc.PaymentMetadata.(type) {

@@ -25,9 +25,9 @@ var (
 )
 
 func SendDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, quarks uint64) error {
-	title := "Deposit Received"
+	title := "Cash Now Available"
 	body := usdcAmountPrinter.Sprintf(
-		"You deposited $%.2f of USDC",
+		"$%.2f was added to your Flipcash balance",
 		float64(quarks)/float64(codecommon.CoreMintQuarksPerUnit),
 	)
 	return pusher.SendBasicPushes(ctx, title, body, user)
