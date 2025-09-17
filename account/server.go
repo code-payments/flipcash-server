@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,20 +29,28 @@ const (
 var (
 	defaultOnRampProviders = []accountpb.UserFlags_OnRampProvider{
 		accountpb.UserFlags_PHANTOM,
-		accountpb.UserFlags_CRYPTO_WALLET,
+		accountpb.UserFlags_MANUAL_DEPOSIT,
 	}
-	onRampProvidersByCountry = map[string]map[commonpb.Platform][]accountpb.UserFlags_OnRampProvider{}
+	onRampProvidersByCountryAndPlatform = map[string]map[commonpb.Platform][]accountpb.UserFlags_OnRampProvider{
+		"us": {
+			commonpb.Platform_APPLE: {
+				accountpb.UserFlags_COINBASE_VIRTUAL,
+			},
+		},
+	}
 
 	staffAppleOnRampProviders = []accountpb.UserFlags_OnRampProvider{
 		accountpb.UserFlags_COINBASE_VIRTUAL,
 		accountpb.UserFlags_PHANTOM,
-		accountpb.UserFlags_CRYPTO_WALLET,
+		accountpb.UserFlags_SOLFLARE,
+		accountpb.UserFlags_BACKPACK,
+		accountpb.UserFlags_MANUAL_DEPOSIT,
 	}
 	staffGoogleOnRampProviders = []accountpb.UserFlags_OnRampProvider{
 		accountpb.UserFlags_PHANTOM,
 		accountpb.UserFlags_SOLFLARE,
 		accountpb.UserFlags_BACKPACK,
-		accountpb.UserFlags_CRYPTO_WALLET,
+		accountpb.UserFlags_MANUAL_DEPOSIT,
 	}
 )
 
@@ -184,11 +193,8 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 	} else {
 		supportedOnRampProvidersForUser = getSupportedOnRampProviders(req.CountryCode, req.Platform)
 	}
-	for _, onRampProvider := range supportedOnRampProvidersForUser {
-		if onRampProvider == accountpb.UserFlags_COINBASE_VIRTUAL {
-			preferredOnRampProviderForUser = accountpb.UserFlags_COINBASE_VIRTUAL
-			break
-		}
+	if slices.Contains(supportedOnRampProvidersForUser, accountpb.UserFlags_COINBASE_VIRTUAL) {
+		preferredOnRampProviderForUser = accountpb.UserFlags_COINBASE_VIRTUAL
 	}
 
 	return &accountpb.GetUserFlagsResponse{
@@ -204,26 +210,29 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 }
 
 func getSupportedOnRampProviders(countryCode *commonpb.CountryCode, platform commonpb.Platform) []accountpb.UserFlags_OnRampProvider {
-	supported := make([]accountpb.UserFlags_OnRampProvider, len(defaultOnRampProviders))
-	copy(supported, defaultOnRampProviders)
+	defaultSupported := make([]accountpb.UserFlags_OnRampProvider, len(defaultOnRampProviders))
+	copy(defaultSupported, defaultOnRampProviders)
 
 	if countryCode == nil {
-		return supported
+		return defaultSupported
 	}
 
 	if platform == commonpb.Platform_UNKNOWN {
-		return supported
+		return defaultSupported
 	}
 
-	byCountry, ok := onRampProvidersByCountry[strings.ToLower(countryCode.Value)]
-	if !ok {
-		return supported
+	byCountry, ok := onRampProvidersByCountryAndPlatform[strings.ToLower(countryCode.Value)]
+	if !ok || len(byCountry) == 0 {
+		return defaultSupported
 	}
 
 	byPlatform, ok := byCountry[platform]
-	if !ok {
-		return supported
+	if !ok || len(byPlatform) == 0 {
+		return defaultSupported
 	}
 
-	return append(supported, byPlatform...)
+	allSupported := make([]accountpb.UserFlags_OnRampProvider, len(byPlatform)+len(defaultSupported))
+	copy(allSupported, byPlatform)                         // Country and platform specific providers take priority
+	copy(allSupported[len(byPlatform):], defaultSupported) // Followed by default global providers
+	return allSupported
 }
