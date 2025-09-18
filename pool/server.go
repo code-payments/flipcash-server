@@ -159,7 +159,11 @@ func (s *Server) validatePoolFundingDestination(ctx context.Context, owner *comm
 		return false, "", err
 	}
 
-	timelockVault, err := poolAccount.ToTimelockVault(codecommon.CodeVmAccount, codecommon.CoreMintAccount)
+	vmConfig, err := codecommon.GetVmConfigForMint(ctx, s.codeData, codecommon.CoreMintAccount)
+	if err != nil {
+		return false, "", err
+	}
+	timelockVault, err := poolAccount.ToTimelockVault(vmConfig)
 	if err != nil {
 		return false, "", err
 	}

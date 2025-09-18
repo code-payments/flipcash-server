@@ -237,6 +237,10 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 
 	var notifications []*activitypb.Notification
 	for _, intentRecord := range intentRecords {
+		if intentRecord.MintAccount != codecommon.CoreMintAccount.PublicKey().ToBase58() {
+			continue
+		}
+
 		rawNotificationID, err := base58.Decode(intentRecord.IntentId)
 		if err != nil {
 			return nil, err
