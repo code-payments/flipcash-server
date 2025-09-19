@@ -17,29 +17,29 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 	case *activitypb.Notification_WelcomeBonus:
 		localizedText = "Welcome Bonus"
 
-	case *activitypb.Notification_GaveUsdc:
+	case *activitypb.Notification_GaveCrypto:
 		localizedText = "Gave"
 
-	case *activitypb.Notification_ReceivedUsdc:
+	case *activitypb.Notification_ReceivedCrypto:
 		localizedText = "Received"
 
-	case *activitypb.Notification_WithdrewUsdc:
+	case *activitypb.Notification_WithdrewCrypto:
 		localizedText = "Withdrew"
 
-	case *activitypb.Notification_DepositedUsdc:
+	case *activitypb.Notification_DepositedCrypto:
 		localizedText = "Added"
 
-	case *activitypb.Notification_PaidUsdc:
-		switch typed.PaidUsdc.PaymentMetadata.(type) {
-		case *activitypb.PaidUsdcNotificationMetadata_Pool:
+	case *activitypb.Notification_PaidCrypto:
+		switch typed.PaidCrypto.PaymentMetadata.(type) {
+		case *activitypb.PaidCryptoNotificationMetadata_Pool:
 			localizedText = "Paid into pool"
 		default:
 			return errors.New("unsupported paid usdc payment metadata type")
 		}
 
-	case *activitypb.Notification_DistributedUsdc:
-		switch typed2 := typed.DistributedUsdc.DistributionMetadata.(type) {
-		case *activitypb.DistributedUsdcNotificationMetadata_Pool:
+	case *activitypb.Notification_DistributedCrypto:
+		switch typed2 := typed.DistributedCrypto.DistributionMetadata.(type) {
+		case *activitypb.DistributedCryptoNotificationMetadata_Pool:
 			switch typed2.Pool.Outcome {
 			case poolpb.UserOutcome_WIN_OUTCOME, poolpb.UserOutcome_REFUND_OUTCOME:
 				localizedText = "Received from pool"
@@ -50,13 +50,13 @@ func InjectLocalizedText(ctx context.Context, codeData codedata.Provider, userOw
 			return errors.New("unsupported distributed usdc distribution metadata type")
 		}
 
-	case *activitypb.Notification_SentUsdc:
-		if typed.SentUsdc.CanInitiateCancelAction {
+	case *activitypb.Notification_SentCrypto:
+		if typed.SentCrypto.CanInitiateCancelAction {
 			localizedText = "Sending"
 		} else {
 			localizedText = "Sent"
 
-			giftCardVaultAccount, err := codecommon.NewAccountFromPublicKeyBytes(typed.SentUsdc.Vault.Value)
+			giftCardVaultAccount, err := codecommon.NewAccountFromPublicKeyBytes(typed.SentCrypto.Vault.Value)
 			if err != nil {
 				return err
 			}

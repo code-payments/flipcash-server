@@ -237,10 +237,6 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 
 	var notifications []*activitypb.Notification
 	for _, intentRecord := range intentRecords {
-		if intentRecord.MintAccount != codecommon.CoreMintAccount.PublicKey().ToBase58() {
-			continue
-		}
-
 		rawNotificationID, err := base58.Decode(intentRecord.IntentId)
 		if err != nil {
 			return nil, err
@@ -253,10 +249,15 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 			State:         activitypb.NotificationState_NOTIFICATION_STATE_COMPLETED,
 		}
 
+		mintAccount, err := codecommon.NewAccountFromPublicKeyString(intentRecord.MintAccount)
+		if err != nil {
+			return nil, err
+		}
+
 		switch intentRecord.IntentType {
 		case codeintent.SendPublicPayment:
 			intentMetadata := intentRecord.SendPublicPaymentMetadata
-			notification.PaymentAmount = &commonpb.UsdcPaymentAmount{
+			notification.PaymentAmount = &commonpb.CryptoPaymentAmount{
 				Currency:     string(intentMetadata.ExchangeCurrency),
 				NativeAmount: intentMetadata.NativeAmount,
 				Quarks:       intentMetadata.Quantity,
@@ -280,7 +281,7 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 						return nil, err
 					}
 
-					notification.AdditionalMetadata = &activitypb.Notification_SentUsdc{SentUsdc: &activitypb.SentUsdcNotificationMetadata{
+					notification.AdditionalMetadata = &activitypb.Notification_SentCrypto{SentCrypto: &activitypb.SentCryptoNotificationMetadata{
 						Vault:                   &commonpb.PublicKey{Value: destinationAccount.ToProto().Value},
 						CanInitiateCancelAction: !isClaimed,
 					}}
@@ -288,28 +289,28 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 						notification.State = activitypb.NotificationState_NOTIFICATION_STATE_PENDING
 					}
 				} else if intentMetadata.IsWithdrawal {
-					notification.AdditionalMetadata = &activitypb.Notification_WithdrewUsdc{WithdrewUsdc: &activitypb.WithdrewUsdcNotificationMetadata{}}
+					notification.AdditionalMetadata = &activitypb.Notification_WithdrewCrypto{WithdrewCrypto: &activitypb.WithdrewCryptoNotificationMetadata{}}
 				} else if isBettingPoolPayment {
-					notification.AdditionalMetadata = &activitypb.Notification_PaidUsdc{PaidUsdc: &activitypb.PaidUsdcNotificationMetadata{
-						PaymentMetadata: &activitypb.PaidUsdcNotificationMetadata_Pool{
-							Pool: &activitypb.PaidUsdcNotificationMetadata_PoolPaymentMetadata{
+					notification.AdditionalMetadata = &activitypb.Notification_PaidCrypto{PaidCrypto: &activitypb.PaidCryptoNotificationMetadata{
+						PaymentMetadata: &activitypb.PaidCryptoNotificationMetadata_Pool{
+							Pool: &activitypb.PaidCryptoNotificationMetadata_PoolPaymentMetadata{
 								PoolId: bettingPool.ID,
 							},
 						},
 					}}
 				} else {
-					notification.AdditionalMetadata = &activitypb.Notification_GaveUsdc{GaveUsdc: &activitypb.GaveUsdcNotificationMetadata{}}
+					notification.AdditionalMetadata = &activitypb.Notification_GaveCrypto{GaveCrypto: &activitypb.GaveCryptoNotificationMetadata{}}
 				}
 			} else {
 				if intentRecord.IntentId == welcomeBonusIntentID {
 					notification.AdditionalMetadata = &activitypb.Notification_WelcomeBonus{WelcomeBonus: &activitypb.WelcomeBonusNotificationMetadata{}}
 				} else if intentMetadata.IsWithdrawal {
-					notification.AdditionalMetadata = &activitypb.Notification_DepositedUsdc{DepositedUsdc: &activitypb.DepositedUsdcNotificationMetadata{}}
+					notification.AdditionalMetadata = &activitypb.Notification_DepositedCrypto{DepositedCrypto: &activitypb.DepositedCryptoNotificationMetadata{}}
 				} else if isBettingPoolPayment {
 					// Show nothing on receiver side for reiving a bet payment to their pool
 					continue
 				} else {
-					notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
+					notification.AdditionalMetadata = &activitypb.Notification_ReceivedCrypto{ReceivedCrypto: &activitypb.ReceivedCryptoNotificationMetadata{}}
 				}
 			}
 
@@ -320,21 +321,21 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				continue
 			}
 
-			notification.PaymentAmount = &commonpb.UsdcPaymentAmount{
+			notification.PaymentAmount = &commonpb.CryptoPaymentAmount{
 				Currency:     string(intentMetadata.OriginalExchangeCurrency),
 				NativeAmount: intentMetadata.OriginalNativeAmount,
 				Quarks:       intentMetadata.Quantity,
 			}
-			notification.AdditionalMetadata = &activitypb.Notification_ReceivedUsdc{ReceivedUsdc: &activitypb.ReceivedUsdcNotificationMetadata{}}
+			notification.AdditionalMetadata = &activitypb.Notification_ReceivedCrypto{ReceivedCrypto: &activitypb.ReceivedCryptoNotificationMetadata{}}
 
 		case codeintent.ExternalDeposit:
 			intentMetadata := intentRecord.ExternalDepositMetadata
-			notification.PaymentAmount = &commonpb.UsdcPaymentAmount{
+			notification.PaymentAmount = &commonpb.CryptoPaymentAmount{
 				Currency:     string(codecurrency.USD),
 				NativeAmount: intentMetadata.UsdMarketValue,
 				Quarks:       intentMetadata.Quantity,
 			}
-			notification.AdditionalMetadata = &activitypb.Notification_DepositedUsdc{DepositedUsdc: &activitypb.DepositedUsdcNotificationMetadata{}}
+			notification.AdditionalMetadata = &activitypb.Notification_DepositedCrypto{DepositedCrypto: &activitypb.DepositedCryptoNotificationMetadata{}}
 
 		case codeintent.PublicDistribution:
 			intentMetadata := intentRecord.PublicDistributionMetadata
@@ -377,14 +378,14 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 				return nil, errors.New("unexpected user pool outcome")
 			}
 
-			notification.PaymentAmount = &commonpb.UsdcPaymentAmount{
+			notification.PaymentAmount = &commonpb.CryptoPaymentAmount{
 				Currency:     string(bettingPool.BuyInCurrency),
 				NativeAmount: nativeAmount,
 				Quarks:       userDistribution.Quantity,
 			}
-			notification.AdditionalMetadata = &activitypb.Notification_DistributedUsdc{DistributedUsdc: &activitypb.DistributedUsdcNotificationMetadata{
-				DistributionMetadata: &activitypb.DistributedUsdcNotificationMetadata_Pool{
-					Pool: &activitypb.DistributedUsdcNotificationMetadata_PoolDistributionMetadata{
+			notification.AdditionalMetadata = &activitypb.Notification_DistributedCrypto{DistributedCrypto: &activitypb.DistributedCryptoNotificationMetadata{
+				DistributionMetadata: &activitypb.DistributedCryptoNotificationMetadata_Pool{
+					Pool: &activitypb.DistributedCryptoNotificationMetadata_PoolDistributionMetadata{
 						PoolId:  bettingPool.ID,
 						Outcome: userOutcome,
 					},
@@ -393,6 +394,10 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 
 		default:
 			continue
+		}
+
+		if notification.PaymentAmount != nil {
+			notification.PaymentAmount.Mint = &commonpb.PublicKey{Value: mintAccount.ToProto().Value}
 		}
 
 		notifications = append(notifications, notification)
