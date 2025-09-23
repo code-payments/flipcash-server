@@ -33,8 +33,14 @@ func NewIntegration(
 	}
 }
 
-func (i *Integration) AllowCreation(ctx context.Context, intentRecord *codeintent.Record, _s *codetransactionpb.Metadata, actions []*codetransactionpb.Action) error {
+func (i *Integration) AllowCreation(ctx context.Context, intentRecord *codeintent.Record, metadata *codetransactionpb.Metadata, actions []*codetransactionpb.Action) error {
 	switch intentRecord.IntentType {
+	case codeintent.OpenAccounts:
+		if metadata.GetOpenAccounts().AccountSet != codetransactionpb.OpenAccountsMetadata_USER {
+			return codetransaction.NewIntentDeniedError("only user account set opening is currently enabled")
+		}
+		return nil
+
 	case codeintent.SendPublicPayment:
 		isPoolAccount, err := i.isPoolAccount(ctx, intentRecord.SendPublicPaymentMetadata.DestinationTokenAccount)
 		if err != nil {
@@ -49,7 +55,7 @@ func (i *Integration) AllowCreation(ctx context.Context, intentRecord *codeinten
 	case codeintent.PublicDistribution:
 		return i.bettingPoolHandler.ValidateDistribution(ctx, intentRecord, actions)
 
-	case codeintent.OpenAccounts, codeintent.ReceivePaymentsPublicly:
+	case codeintent.ReceivePaymentsPublicly:
 		return nil
 
 	default:
