@@ -330,6 +330,12 @@ func (s *Server) toLocalizedNotifications(ctx context.Context, log *zap.Logger, 
 
 		case codeintent.ExternalDeposit:
 			intentMetadata := intentRecord.ExternalDepositMetadata
+
+			// Hide small, potentially spam deposits
+			if intentMetadata.UsdMarketValue < 0.01 {
+				continue
+			}
+
 			notification.PaymentAmount = &commonpb.CryptoPaymentAmount{
 				Currency:     string(codecurrency.USD),
 				NativeAmount: intentMetadata.UsdMarketValue,

@@ -24,6 +24,10 @@ func NewIntegration(accounts account.Store, pusher push.Pusher) codegeyser.Integ
 }
 
 func (i *Integration) OnDepositReceived(ctx context.Context, owner *codecommon.Account, quarksReceived uint64) error {
+	// Hide small, potentially spam deposits
+	if quarksReceived < 10000 {
+		return nil
+	}
 	userID, err := i.accounts.GetUserId(ctx, &commonpb.PublicKey{Value: owner.PublicKey().ToBytes()})
 	if err != nil {
 		return err
