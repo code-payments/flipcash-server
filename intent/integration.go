@@ -36,8 +36,12 @@ func NewIntegration(
 func (i *Integration) AllowCreation(ctx context.Context, intentRecord *codeintent.Record, metadata *codetransactionpb.Metadata, actions []*codetransactionpb.Action) error {
 	switch intentRecord.IntentType {
 	case codeintent.OpenAccounts:
-		if metadata.GetOpenAccounts().AccountSet != codetransactionpb.OpenAccountsMetadata_USER {
-			return codetransaction.NewIntentDeniedError("only user account set opening is currently enabled")
+		switch metadata.GetOpenAccounts().AccountSet {
+		case codetransactionpb.OpenAccountsMetadata_USER:
+		case codetransactionpb.OpenAccountsMetadata_POOL:
+			return codetransaction.NewIntentDeniedError("pool account opening is disabled")
+		default:
+			return codetransaction.NewIntentDeniedError("unsupported account set")
 		}
 		return nil
 
