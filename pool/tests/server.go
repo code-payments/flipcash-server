@@ -16,6 +16,7 @@ import (
 	eventpb "github.com/code-payments/flipcash-protobuf-api/generated/go/event/v1"
 	poolpb "github.com/code-payments/flipcash-protobuf-api/generated/go/pool/v1"
 
+	"github.com/code-payments/code-server/pkg/code/common"
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codedata "github.com/code-payments/code-server/pkg/code/data"
 	codeaccount "github.com/code-payments/code-server/pkg/code/data/account"
@@ -480,6 +481,7 @@ func simulateBetPayment(t *testing.T, codeData codedata.Provider, pool *poolpb.S
 			UsdMarketValue:          250.00,
 		},
 		InitiatorOwnerAccount: base58.Encode(model.MustGenerateKeyPair().Public()),
+		MintAccount:           common.CoreMintAccount.PublicKey().ToBase58(),
 	}
 	require.NoError(t, codeData.SaveIntent(context.Background(), intentRecord))
 }

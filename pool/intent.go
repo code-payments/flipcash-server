@@ -41,6 +41,8 @@ func (h *IntentHandler) ValidateBetPayment(ctx context.Context, intentRecord *co
 		return errors.New("unexpected intent type")
 	}
 
+	return codetransaction.NewIntentDeniedError("bet payments are disabled")
+
 	intentID, err := codecommon.NewAccountFromPublicKeyString(intentRecord.IntentId)
 	if err != nil {
 		return err
