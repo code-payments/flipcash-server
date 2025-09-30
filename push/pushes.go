@@ -24,11 +24,20 @@ var (
 	betTieEmojis  = []string{"🤝", "🫠", "😶", "⚖️", "⚔️", "🪇", "🍣", "🎭", "⛓️", "🌗"}
 )
 
-func SendDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, quarks uint64) error {
+func SendUsdcDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, quarks uint64) error {
 	title := "Cash Now Available"
 	body := usdcAmountPrinter.Sprintf(
 		"$%.2f was added to your Flipcash balance",
 		float64(quarks)/float64(codecommon.CoreMintQuarksPerUnit),
+	)
+	return pusher.SendBasicPushes(ctx, title, body, user)
+}
+
+func SendFlipcashCurrencyDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, usdMarketValue float64) error {
+	title := "Cash Now Available"
+	body := usdcAmountPrinter.Sprintf(
+		"$%.2f USD of Jeffy was added to your Flipcash balance",
+		usdMarketValue,
 	)
 	return pusher.SendBasicPushes(ctx, title, body, user)
 }
