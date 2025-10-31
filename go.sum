@@ -40,10 +40,10 @@ github.com/cockroachdb/apd v1.1.0 h1:3LFP3629v+1aKXU5Q37mxmRxX/pIu1nijXydLShEq5I
 github.com/cockroachdb/apd v1.1.0/go.mod h1:8Sl8LxpKi29FqWXR16WEFZRNSz3SoPzUzeMeY4+DwBQ=
 github.com/cockroachdb/cockroach-go/v2 v2.2.0 h1:/5znzg5n373N/3ESjHF5SMLxiW4RKB05Ql//KWfeTFs=
 github.com/cockroachdb/cockroach-go/v2 v2.2.0/go.mod h1:u3MiKYGupPPjkn3ozknpMUpxPaNLTFWAya419/zv6eI=
-github.com/code-payments/code-protobuf-api v1.19.1-0.20250929133100-a1ab7623b991 h1:PHF+Z13T/RSzXygGLaDhl1ELArncjDnqWYCtlcLjdgw=
-github.com/code-payments/code-protobuf-api v1.19.1-0.20250929133100-a1ab7623b991/go.mod h1:fl4xu32MeNpGZR3wFhwEeKO0qVDuxYBNkqnvuADt6cA=
-github.com/code-payments/code-server v1.10.21-0.20250930151405-d20eeb4eeca8 h1:Zwy3xw6eb6cwdn4CDOcq2bFvHhFHjbr9AZmrKYIstcA=
-github.com/code-payments/code-server v1.10.21-0.20250930151405-d20eeb4eeca8/go.mod h1:l6UJUf85S5GtOKF3FRD5FZVrGDQ54VZ65zFvoGX/6NU=
+github.com/code-payments/code-protobuf-api v1.19.1-0.20251006190631-c7955e3a049a h1:es8YUC/il/9wYpNIh/BkckPIaNDonGiiiehUE0q+mA0=
+github.com/code-payments/code-protobuf-api v1.19.1-0.20251006190631-c7955e3a049a/go.mod h1:fl4xu32MeNpGZR3wFhwEeKO0qVDuxYBNkqnvuADt6cA=
+github.com/code-payments/code-server v1.10.21-0.20251031131958-bbc8dd17686c h1:Qo5tTZXR9BP/Vlw74r9V9qVEe8CBzwOOReft/vNeZW8=
+github.com/code-payments/code-server v1.10.21-0.20251031131958-bbc8dd17686c/go.mod h1:xOgHG7/SVq8q2aty5e4h+HtsUwChOHqoQ0/NRgPyvPo=
 github.com/code-payments/code-vm-indexer v0.1.11-0.20241028132209-23031e814fba h1:Bkp+gmeb6Y2PWXfkSCTMBGWkb2P1BujRDSjWeI+0j5I=
 github.com/code-payments/code-vm-indexer v0.1.11-0.20241028132209-23031e814fba/go.mod h1:jSiifpiBpyBQ8q2R0MGEbkSgWC6sbdRTyDBntmW+j1E=
 github.com/code-payments/flipcash-protobuf-api v1.9.13 h1:e8cgMapZiFbSf0Ah00TyqjxnbFHmxT5wqOpRVq5O/00=

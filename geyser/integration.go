@@ -23,7 +23,7 @@ func NewIntegration(accounts account.Store, pusher push.Pusher) codegeyser.Integ
 	}
 }
 
-func (i *Integration) OnDepositReceived(ctx context.Context, owner, mint *codecommon.Account, quarksReceived uint64, usdMarketValue float64) error {
+func (i *Integration) OnDepositReceived(ctx context.Context, owner, mint *codecommon.Account, currencyName string, quarksReceived uint64, usdMarketValue float64) error {
 	// Hide small, potentially spam deposits
 	if usdMarketValue < 0.01 {
 		return nil
@@ -37,5 +37,5 @@ func (i *Integration) OnDepositReceived(ctx context.Context, owner, mint *codeco
 	if codecommon.IsCoreMint(mint) {
 		return push.SendUsdcDepositReceivedPush(ctx, i.pusher, userID, quarksReceived)
 	}
-	return push.SendFlipcashCurrencyDepositReceivedPush(ctx, i.pusher, userID, usdMarketValue)
+	return push.SendFlipcashCurrencyDepositReceivedPush(ctx, i.pusher, userID, currencyName, usdMarketValue)
 }

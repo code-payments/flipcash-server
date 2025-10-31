@@ -33,10 +33,11 @@ func SendUsdcDepositReceivedPush(ctx context.Context, pusher Pusher, user *commo
 	return pusher.SendBasicPushes(ctx, title, body, user)
 }
 
-func SendFlipcashCurrencyDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, usdMarketValue float64) error {
+func SendFlipcashCurrencyDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, currencyName string, usdMarketValue float64) error {
 	title := "Cash Now Available"
 	body := usdcAmountPrinter.Sprintf(
-		"$%.2f of Jeffy was added to your Flipcash balance",
+		"$%.2f of %s was added to your Flipcash balance",
+		currencyName,
 		usdMarketValue,
 	)
 	return pusher.SendBasicPushes(ctx, title, body, user)
