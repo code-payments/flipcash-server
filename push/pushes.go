@@ -37,8 +37,8 @@ func SendFlipcashCurrencyDepositReceivedPush(ctx context.Context, pusher Pusher,
 	title := "Cash Now Available"
 	body := usdcAmountPrinter.Sprintf(
 		"$%.2f of %s was added to your Flipcash balance",
-		currencyName,
 		usdMarketValue,
+		currencyName,
 	)
 	return pusher.SendBasicPushes(ctx, title, body, user)
 }
