@@ -27,7 +27,7 @@ var (
 func SendUsdcDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, quarks uint64) error {
 	title := "Cash Now Available"
 	body := usdcAmountPrinter.Sprintf(
-		"$%.2f was added to your Flipcash balance",
+		"$%.2f was added to your Flipcash wallet",
 		float64(quarks)/float64(codecommon.CoreMintQuarksPerUnit),
 	)
 	return pusher.SendBasicPushes(ctx, title, body, user)
@@ -36,7 +36,7 @@ func SendUsdcDepositReceivedPush(ctx context.Context, pusher Pusher, user *commo
 func SendFlipcashCurrencyDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, currencyName string, usdMarketValue float64) error {
 	title := "Cash Now Available"
 	body := usdcAmountPrinter.Sprintf(
-		"$%.2f of %s was added to your Flipcash balance",
+		"$%.2f of %s was added to your Flipcash wallet",
 		usdMarketValue,
 		currencyName,
 	)
