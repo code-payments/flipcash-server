@@ -225,6 +225,35 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 	}, nil
 }
 
+func (s *Server) GetUnauthenticatedUserFlags(ctx context.Context, req *accountpb.GetUnauthenticatedUserFlagsRequest) (*accountpb.GetUnauthenticatedUserFlagsResponse, error) {
+	supportedOnRampProvidersForUser := getSupportedOnRampProviders(req.CountryCode, req.Platform)
+
+	var preferredOnRampProviderForUser accountpb.UserFlags_OnRampProvider
+	if slices.Contains(supportedOnRampProvidersForUser, accountpb.UserFlags_COINBASE_VIRTUAL) {
+		preferredOnRampProviderForUser = accountpb.UserFlags_COINBASE_VIRTUAL
+	}
+
+	var minBuildNumber int
+	switch req.Platform {
+	case commonpb.Platform_APPLE:
+		minBuildNumber = minIosBuildNumber
+	case commonpb.Platform_GOOGLE:
+		minBuildNumber = minAndroidBuildNumber
+	}
+
+	return &accountpb.GetUnauthenticatedUserFlagsResponse{
+		Result: accountpb.GetUnauthenticatedUserFlagsResponse_OK,
+		UserFlags: &accountpb.UserFlags{
+			IsStaff:                    false,
+			IsRegisteredAccount:        false,
+			RequiresIapForRegistration: requireIapOnAccountCreation,
+			SupportedOnRampProviders:   supportedOnRampProvidersForUser,
+			PreferredOnRampProvider:    preferredOnRampProviderForUser,
+			MinBuildNumber:             uint32(minBuildNumber),
+		},
+	}, nil
+}
+
 func getSupportedOnRampProviders(countryCode *commonpb.CountryCode, platform commonpb.Platform) []accountpb.UserFlags_OnRampProvider {
 	defaultSupported := make([]accountpb.UserFlags_OnRampProvider, len(defaultOnRampProviders))
 	copy(defaultSupported, defaultOnRampProviders)
