@@ -24,6 +24,9 @@ import (
 const (
 	loginWindow                 = 2 * time.Minute
 	requireIapOnAccountCreation = false
+
+	minIosBuildNumber     = 256
+	minAndroidBuildNumber = 2775
 )
 
 var (
@@ -201,6 +204,14 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 		preferredOnRampProviderForUser = accountpb.UserFlags_COINBASE_VIRTUAL
 	}
 
+	var minBuildNumber int
+	switch req.Platform {
+	case commonpb.Platform_APPLE:
+		minBuildNumber = minIosBuildNumber
+	case commonpb.Platform_GOOGLE:
+		minBuildNumber = minAndroidBuildNumber
+	}
+
 	return &accountpb.GetUserFlagsResponse{
 		Result: accountpb.GetUserFlagsResponse_OK,
 		UserFlags: &accountpb.UserFlags{
@@ -209,6 +220,7 @@ func (s *Server) GetUserFlags(ctx context.Context, req *accountpb.GetUserFlagsRe
 			RequiresIapForRegistration: requireIapOnAccountCreation,
 			SupportedOnRampProviders:   supportedOnRampProvidersForUser,
 			PreferredOnRampProvider:    preferredOnRampProviderForUser,
+			MinBuildNumber:             uint32(minBuildNumber),
 		},
 	}, nil
 }
