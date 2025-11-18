@@ -7,6 +7,7 @@ import (
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 
 	codeantispam "github.com/code-payments/code-server/pkg/code/antispam"
+	"github.com/code-payments/code-server/pkg/code/common"
 	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	"github.com/code-payments/flipcash-server/account"
 )
@@ -73,6 +74,6 @@ func (i *Integration) AllowDistribution(ctx context.Context, owner *codecommon.A
 	return true, "", nil
 }
 
-func (i *Integration) AllowSwap(ctx context.Context, _ *codecommon.Account) (bool, string, error) {
-	return false, "swaps are disabled for flipcash", nil
+func (i *Integration) AllowSwap(_ context.Context, _, _, _ *common.Account) (bool, string, error) {
+	return true, "", nil
 }
