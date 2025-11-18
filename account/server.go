@@ -26,7 +26,7 @@ const (
 	requireIapOnAccountCreation = false
 
 	minIosBuildNumber     = 256
-	minAndroidBuildNumber = 2775
+	minAndroidBuildNumber = 2789
 )
 
 var (
