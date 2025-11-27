@@ -25,7 +25,7 @@ const (
 	loginWindow                 = 2 * time.Minute
 	requireIapOnAccountCreation = false
 
-	minIosBuildNumber     = 256
+	minIosBuildNumber     = 188
 	minAndroidBuildNumber = 2790
 )
 

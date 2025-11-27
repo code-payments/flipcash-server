@@ -11,7 +11,6 @@ import (
 	commonpb "github.com/code-payments/flipcash-protobuf-api/generated/go/common/v1"
 	"github.com/code-payments/flipcash-server/localization"
 
-	codecommon "github.com/code-payments/code-server/pkg/code/common"
 	codecurrency "github.com/code-payments/code-server/pkg/currency"
 )
 
@@ -24,20 +23,39 @@ var (
 	betTieEmojis  = []string{"🤝", "🫠", "😶", "⚖️", "⚔️", "🪇", "🍣", "🎭", "⛓️", "🌗"}
 )
 
-func SendUsdcDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, quarks uint64) error {
+func SendUsdcReceivedFromDepositPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, usdMarketValue float64) error {
 	title := "Cash Now Available"
 	body := usdcAmountPrinter.Sprintf(
 		"$%.2f was added to your Flipcash wallet",
-		float64(quarks)/float64(codecommon.CoreMintQuarksPerUnit),
+		usdMarketValue,
 	)
 	return pusher.SendBasicPushes(ctx, title, body, user)
 }
 
-func SendFlipcashCurrencyDepositReceivedPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, currencyName string, usdMarketValue float64) error {
-	title := "Cash Now Available"
+func SendFlipcashCurrencyReceivedFromDepositPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, currencyName string, usdMarketValue float64) error {
+	title := fmt.Sprintf("%s Now Available", currencyName)
 	body := usdcAmountPrinter.Sprintf(
 		"$%.2f of %s was added to your Flipcash wallet",
 		usdMarketValue,
+		currencyName,
+	)
+	return pusher.SendBasicPushes(ctx, title, body, user)
+}
+
+func SendUsdcReceivedFromSwapPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, region codecurrency.Code, nativeAmount float64) error {
+	title := "Cash Now Available"
+	body := usdcAmountPrinter.Sprintf(
+		"%s was added to your Flipcash wallet",
+		localization.FormatFiat(defaultLocale, region, nativeAmount),
+	)
+	return pusher.SendBasicPushes(ctx, title, body, user)
+}
+
+func SendFlipcashCurrencyReceivedFromSwapPush(ctx context.Context, pusher Pusher, user *commonpb.UserId, currencyName string, region codecurrency.Code, nativeAmount float64) error {
+	title := fmt.Sprintf("%s Now Available", currencyName)
+	body := usdcAmountPrinter.Sprintf(
+		"%s of %s was added to your Flipcash wallet",
+		localization.FormatFiat(defaultLocale, region, nativeAmount),
 		currencyName,
 	)
 	return pusher.SendBasicPushes(ctx, title, body, user)

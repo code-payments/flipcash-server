@@ -5,8 +5,8 @@ go 1.24.0
 require (
 	firebase.google.com/go/v4 v4.15.2
 	github.com/ReneKroon/ttlcache v1.7.0
-	github.com/code-payments/code-protobuf-api v1.19.1-0.20251118163018-a7ac2495fb53
-	github.com/code-payments/code-server v1.10.21-0.20251118164833-6ab44d7995ae
+	github.com/code-payments/code-protobuf-api v1.19.1-0.20251126151344-3fd1dad96a6f
+	github.com/code-payments/code-server v1.10.21-0.20251127140055-6457e7350f2d
 	github.com/code-payments/flipcash-protobuf-api v1.9.15
 	github.com/devsisters/go-applereceipt v0.0.0-20240805020915-fa22a0160fc2
 	github.com/georgysavva/scany/v2 v2.1.4
