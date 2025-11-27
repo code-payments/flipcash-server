@@ -138,7 +138,7 @@ var symbolByCurrency = map[codecurrency.Code]string{
 func FormatFiat(locale language.Tag, currency codecurrency.Code, amount float64) string {
 	isRtlScript := isRtlScript(locale)
 
-	decimals := 2
+	decimals := codecurrency.GetDecimals(currency)
 
 	printer := message.NewPrinter(locale)
 	amountAsDecimal := number.Decimal(amount, number.Scale(decimals))
